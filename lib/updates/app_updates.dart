@@ -12,12 +12,10 @@ const updateRepository = String.fromEnvironment(
   'UPDATE_REPOSITORY',
   defaultValue: 'mikufoxxx/Wenku8_Flutter',
 );
-const currentAppVersion = '0.2.3';
-const currentAppBuild = 5;
+const currentAppVersion = '0.2.4';
+const currentAppBuild = 6;
 const currentReleaseNotes = '''
-1. 优化模糊
-2. 优化液态玻璃
-3. 修复插图显示
+修复从书籍、设置及弹层返回时键盘意外弹出，保留搜索内容和正常输入。
 ''';
 
 class ReleaseVersion implements Comparable<ReleaseVersion> {

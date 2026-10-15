@@ -135,7 +135,15 @@ class LiquidGlassBatch extends StatefulWidget {
     super.key,
     required this.child,
     this.enabled = true,
-  });
+  }) : _inherit = false;
+
+  /// Keeps the enclosing batch while [enabled], or isolates this subtree when
+  /// disabled, without replacing its widgets or input connections.
+  const LiquidGlassBatch.inherit({
+    super.key,
+    required this.child,
+    this.enabled = true,
+  }) : _inherit = true;
 
   /// Keeps [child] out of the enclosing batch.
   ///
@@ -147,7 +155,7 @@ class LiquidGlassBatch extends StatefulWidget {
   const LiquidGlassBatch.exclude({
     super.key,
     required this.child,
-  }) : enabled = false;
+  }) : enabled = false, _inherit = false;
 
   /// The subtree whose `LiquidGlassLens` descendants share the read.
   final Widget child;
@@ -157,6 +165,7 @@ class LiquidGlassBatch extends StatefulWidget {
   /// disabled batch nested inside an enabled one restores for its own
   /// subtree.
   final bool enabled;
+  final bool _inherit;
 
   /// The shared backdrop key for the nearest enclosing batch, or `null` when
   /// there is none (or the nearest one is disabled).
@@ -192,7 +201,9 @@ class _LiquidGlassBatchState extends State<LiquidGlassBatch> {
   @override
   Widget build(BuildContext context) {
     return LiquidGlassBatchScope(
-      backdropId: widget.enabled ? _backdropId : null,
+      backdropId: widget.enabled
+          ? (widget._inherit ? LiquidGlassBatch.backdropIdOf(context) : _backdropId)
+          : null,
       child: widget.child,
     );
   }

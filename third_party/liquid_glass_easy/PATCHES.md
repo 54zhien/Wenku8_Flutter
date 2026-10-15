@@ -33,3 +33,10 @@ radius, refraction width and Gaussian blur in screen units under positive,
 axis-aligned ancestor scales. Foreground layout remains host-owned. Normal
 lenses, rotations and existing callers keep the upstream local-space contract.
 This preserves the app's circular menu origin without relaying out its labels.
+
+## Stable batch inheritance
+
+`LiquidGlassBatch.inherit` keeps the enclosing backdrop key while enabled and
+isolates the subtree while disabled. The scope stays mounted across changes,
+preserving focused inputs and their platform connections as a lens settles.
+The existing batch and exclude constructors keep their original behavior.

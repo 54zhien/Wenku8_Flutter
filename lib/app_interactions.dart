@@ -26,6 +26,9 @@ Future<T?> pushNovelPage<T>(
     paperFlight: paperFlight,
   );
   try {
+    // Android back may hide the IME while its EditableText stays focused.
+    // Clear that scope's focus history before the route can restore it on pop.
+    FocusManager.instance.primaryFocus?.unfocus();
     final result = await navigator.push(route);
     await route.completed;
     return result;

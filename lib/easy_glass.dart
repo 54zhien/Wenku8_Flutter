@@ -65,7 +65,9 @@ class EasyGlassSurface extends StatelessWidget {
             ],
           )
         : lens;
-    return independent ? LiquidGlassBatch.exclude(child: surface) : surface;
+    // Activation changes batching, not subtree identity. Replacing this
+    // wrapper would dispose an active TextField at the end of its jelly motion.
+    return LiquidGlassBatch.inherit(enabled: !independent, child: surface);
   }
 }
 

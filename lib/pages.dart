@@ -68,6 +68,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   bool _searchOpen = false;
   bool _searchMounted = false;
   bool _searchCovered = false;
+  bool _searchFocusPending = false;
   final _searchText = TextEditingController();
   final _searchFocus = FocusNode(debugLabel: 'inline-search');
   bool _searchStarted = false;
@@ -83,7 +84,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
           setState(() => _searchMounted = false);
         } else if (status == AnimationStatus.completed && _searchOpen) {
           setState(() => _searchCovered = true);
-          _searchFocus.requestFocus();
+          _focusOpenedSearch();
         }
       });
   late final AnimationController _pageTransition =
@@ -129,6 +130,16 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // An obscured route can pause its expansion ticker until it returns.
+    // Returning must not resume an old request to open the keyboard.
+    if (ModalRoute.isCurrentOf(context) == false) {
+      _searchFocusPending = false;
+    }
+  }
+
+  @override
   void dispose() {
     _pageTransition.dispose();
     _searchExpansion.dispose();
@@ -143,6 +154,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       widget.state.reduceMotion || MediaQuery.disableAnimationsOf(context);
 
   void _openSearch() {
+    _searchFocusPending = true;
     if (!_searchStarted || (_searchFeed.page == 0 && !_searchFeed.loading)) {
       _searchStarted = true;
       _searchFeed.loadInitial();
@@ -154,15 +166,31 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     if (_reduceMotion) {
       _searchExpansion.value = 1;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _searchOpen) _searchFocus.requestFocus();
+        if (mounted) _focusOpenedSearch();
       });
     } else {
       _searchExpansion.forward();
     }
   }
 
-  void _closeSearch() {
+  void _focusOpenedSearch() {
+    if (!_searchFocusPending ||
+        !_searchOpen ||
+        _searchFocus.context == null ||
+        ModalRoute.isCurrentOf(context) == false) {
+      return;
+    }
+    _searchFocusPending = false;
+    _searchFocus.requestFocus();
+  }
+
+  void _dismissSearchKeyboard() {
+    _searchFocusPending = false;
     _searchFocus.unfocus();
+  }
+
+  void _closeSearch() {
+    _dismissSearchKeyboard();
     _searchFeed.cancelScheduledSearch();
     setState(() {
       _searchOpen = false;
@@ -207,11 +235,12 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       selection: TextSelection.collapsed(offset: query.length),
     );
     _searchFeed.searchFor(query);
-    _searchFocus.unfocus();
+    _dismissSearchKeyboard();
   }
 
   void _selectTab(int index) {
     if (index == _tab) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     final reduceMotion =
         widget.state.reduceMotion || MediaQuery.disableAnimationsOf(context);
     if (index != _tab) HapticFeedback.selectionClick();
@@ -238,25 +267,28 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     return Offstage(
       key: ValueKey('home-tab-$index'),
       offstage: _searchCovered || (!active && !outgoing),
-      child: TickerMode(
-        enabled: active && !_searchCovered,
-        child: HeroMode(
-          enabled: active && !_searchMounted,
-          child: IgnorePointer(
-            ignoring: !active || _searchMounted,
-            child: ExcludeSemantics(
-              excluding: !active || _searchMounted,
-              child: ArchivePlaneTransition(
-                key: ValueKey('home-archive-plane-$index'),
-                animation: animation,
-                kind: outgoing
-                    ? ArchivePlaneKind.outgoing
-                    : ArchivePlaneKind.incoming,
-                direction: _tabDirection,
-                child: ArchiveMotionScope(
+      child: ExcludeFocus(
+        excluding: !active || _searchMounted,
+        child: TickerMode(
+          enabled: active && !_searchCovered,
+          child: HeroMode(
+            enabled: active && !_searchMounted,
+            child: IgnorePointer(
+              ignoring: !active || _searchMounted,
+              child: ExcludeSemantics(
+                excluding: !active || _searchMounted,
+                child: ArchivePlaneTransition(
+                  key: ValueKey('home-archive-plane-$index'),
                   animation: animation,
-                  enabled: active && !_reduceMotion,
-                  child: _pageWidgets[index],
+                  kind: outgoing
+                      ? ArchivePlaneKind.outgoing
+                      : ArchivePlaneKind.incoming,
+                  direction: _tabDirection,
+                  child: ArchiveMotionScope(
+                    animation: animation,
+                    enabled: active && !_reduceMotion,
+                    child: _pageWidgets[index],
+                  ),
                 ),
               ),
             ),
@@ -306,7 +338,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                               feed: _searchFeed,
                               state: widget.state,
                               repository: widget.repository,
-                              onOpenBook: _searchFocus.unfocus,
+                              onOpenBook: _dismissSearchKeyboard,
                               onRecall: _recallSearch,
                             ),
                           ),
@@ -497,7 +529,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
             style: const TextStyle(fontSize: 14),
             onSubmitted: (query) {
               _searchFeed.searchFor(query);
-              _searchFocus.unfocus();
+              _dismissSearchKeyboard();
             },
             decoration: InputDecoration(
               border: InputBorder.none,

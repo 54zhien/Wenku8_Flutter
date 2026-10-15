@@ -1258,6 +1258,7 @@ Future<T?> showGlassMenu<T>({
   owner?.setOpen(true);
   _activeGlassOverlays[context] = true;
   try {
+    FocusManager.instance.primaryFocus?.unfocus();
     final result = await navigator.push<T>(route);
     await route.completed;
     return result;
@@ -1289,6 +1290,7 @@ Future<T?> _showGlassOverlay<T>({
   );
   _activeGlassOverlays[context] = true;
   try {
+    FocusManager.instance.primaryFocus?.unfocus();
     final result = await navigator.push<T>(route);
     // Do not reflow/load the obscured page during the reverse animation.
     await route.completed;

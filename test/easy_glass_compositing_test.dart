@@ -6,16 +6,18 @@ import 'package:wenku8_flutter/easy_glass.dart';
 import 'package:wenku8_flutter/library_state.dart';
 import 'package:wenku8_flutter/native_effects.dart';
 
-EasyGlassSurface _glass(Widget child) => EasyGlassSurface(
-  radius: 24,
-  thickness: 20,
-  blur: 8,
-  refractiveIndex: 1.45,
-  tint: const Color(0xddfffdf8),
-  emission: .01,
-  activation: 0,
-  child: child,
-);
+EasyGlassSurface _glass(Widget child, {bool independent = false}) =>
+    EasyGlassSurface(
+      radius: 24,
+      thickness: 20,
+      blur: 8,
+      refractiveIndex: 1.45,
+      tint: const Color(0xddfffdf8),
+      emission: .01,
+      activation: 0,
+      independent: independent,
+      child: child,
+    );
 
 void main() {
   testWidgets('sheet buttons share the finished parent glass, not its input', (
@@ -70,6 +72,54 @@ void main() {
     expect(foreground, isNot(first));
     expect(find.byType(LiquidGlassLens), findsNWidgets(3));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('changing batch isolation preserves the lens and active input', (
+    tester,
+  ) async {
+    final isolated = ValueNotifier(false);
+    addTearDown(isolated.dispose);
+    int? parent;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LiquidGlassBatch(
+          child: Builder(
+            builder: (context) {
+              parent = LiquidGlassBatch.backdropIdOf(context);
+              return ValueListenableBuilder<bool>(
+                valueListenable: isolated,
+                builder: (_, independent, child) =>
+                    _glass(child!, independent: independent),
+                child: const Material(child: TextField()),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), '输入不被动效打断');
+    final lens = find.byType(LiquidGlassLens);
+    final originalLens = tester.element(lens);
+    final originalInput = tester.state<EditableTextState>(
+      find.byType(EditableText),
+    );
+    expect(parent, isNotNull);
+    for (final value in [true, false, true, false]) {
+      isolated.value = value;
+      await tester.pumpAndSettle();
+      expect(identical(tester.element(lens), originalLens), isTrue);
+      expect(
+        identical(tester.state(find.byType(EditableText)), originalInput),
+        isTrue,
+      );
+      expect(
+        LiquidGlassBatch.backdropIdOf(tester.element(lens)),
+        value ? null : parent,
+      );
+      expect(originalInput.widget.focusNode.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(find.text('输入不被动效打断'), findsOneWidget);
+    }
   });
 
   testWidgets('opposite scroll edges stay off the page glass batch', (

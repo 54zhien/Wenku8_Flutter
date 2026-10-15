@@ -63,8 +63,8 @@ cd android
 ## 发布一个可被应用检测的版本
 
 1. 更新 `pubspec.yaml` 的版本号和更大的 Android 构建号，并同步 `lib/updates/app_updates.dart` 的本版说明与版本常量。
-2. 在 `CHANGELOG.md` 添加对应版本的说明。运行 `python3 tools/prepare_release.py --tag v0.2.3 --notes build/release-notes.md` 可检查当前版本与标签是否一致。
-3. 提交到自己的 Fork 后，推送与版本一致的标签，例如当前版本用 `v0.2.3`。本地整理脚本不会推送。
+2. 在 `CHANGELOG.md` 添加对应版本的说明。运行 `python3 tools/prepare_release.py --tag v0.2.4 --notes build/release-notes.md` 可检查当前版本与标签是否一致。
+3. 提交到自己的 Fork 后，推送与版本一致的标签，例如当前版本用 `v0.2.4`。本地整理脚本不会推送。
 4. Actions 完成检查和三架构构建，上传 APK / 工程源码并创建 **Draft Release**。先核对签名、工程归档、脱敏与第三方条件，再点击 **Publish release**。
 5. 已安装应用会在下次前台检查时显示新版本；也可以在「关于轻小说文库」立即检查。草稿、预发布和普通 Actions Artifacts 不进入自动更新渠道。
 
