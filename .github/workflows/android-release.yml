@@ -81,6 +81,7 @@ jobs:
           for entry in 'android-arm armeabi-v7a' 'android-arm64 arm64-v8a' 'android-x64 x86_64'; do
             read -r target abi <<< "$entry"
             flutter build apk --release --target-platform "$target" --dart-define="UPDATE_REPOSITORY=$UPDATE_REPOSITORY"
+            python3 tools/verify_apk_runtime.py build/app/outputs/flutter-apk/app-release.apk --abi "$abi"
             cp build/app/outputs/flutter-apk/app-release.apk "build/release-assets/wenku8-$VERSION-$abi.apk"
           done
       - name: Native tests

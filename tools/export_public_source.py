@@ -11,6 +11,7 @@ FILES = (
     "tools/export_public_source.py", "tools/test_public_source_export.py", "tools/generate_app_icons.dart",
     "docs/RELEASING.md", "docs/THIRD_PARTY.md", "CHANGELOG.md", "tools/prepare_release.py", "tools/test_prepare_release.py",
     "tools/check_public_source.py", "tools/test_public_source_policy.py",
+    "tools/verify_apk_runtime.py", "tools/test_verify_apk_runtime.py",
 )
 DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "android", "ios", "docs/images")
 PRIVATE_NAMES = {

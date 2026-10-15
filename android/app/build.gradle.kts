@@ -16,6 +16,9 @@ android {
     namespace = "org.mewx.wenku8_flutter"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+    // The separately authorized API runtime must remain byte-for-byte intact.
+    // AGP otherwise strips its symbols even when jniLibs contains original files.
+    packaging.jniLibs.keepDebugSymbols.add("**/libcpp.so")
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

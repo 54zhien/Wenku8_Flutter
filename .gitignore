@@ -126,3 +126,5 @@ key.properties
 !/tools/test_prepare_release.py
 !/tools/check_public_source.py
 !/tools/test_public_source_policy.py
+!/tools/verify_apk_runtime.py
+!/tools/test_verify_apk_runtime.py

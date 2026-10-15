@@ -12,8 +12,8 @@ const updateRepository = String.fromEnvironment(
   'UPDATE_REPOSITORY',
   defaultValue: 'mikufoxxx/Wenku8_Flutter',
 );
-const currentAppVersion = '0.2.1';
-const currentAppBuild = 3;
+const currentAppVersion = '0.2.2';
+const currentAppBuild = 4;
 const currentReleaseNotes = '''
 修复在线听书连接失败，更新语音服务校验协议。
 系统离线语音标为待开发，原离线选择回到在线音色，不自动播放。
