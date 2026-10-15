@@ -77,3 +77,52 @@ com_crashlytics_export_strings.xml
 crashlytics.properties
 crashlytics-build.properties
 fabric.properties
+
+# Flutter/Dart generated files
+.idea/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+.packages
+.pub-cache/
+.pub/
+.fvm/flutter_sdk
+/build/
+/coverage/
+/.local-samples/
+/android/.gradle/
+/ios/Pods/
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+
+# Local QA captures, personal device logs and internal development notes
+.DS_Store
+/.local-notes/
+/flutter_screenshots/
+/sites/
+/FLUTTER_MIGRATION.md
+/LISTENING.md
+**/__pycache__/
+*.pyc
+
+# Machine paths and signing credentials
+key.properties
+*.keystore
+*.jks
+
+# Keep standalone diagnostics locally, outside the public app sources
+/lib/performance_page.dart
+/lib/ui_performance.dart
+/lib/expansion_probe.dart
+/lib/render_budget_probe.dart
+/integration_test/performance_capture_test.dart
+/test/ui_frame_capture_test.dart
+/tools/*
+!/tools/export_public_source.py
+!/tools/test_public_source_export.py
+!/tools/generate_app_icons.dart
+!/tools/prepare_release.py
+!/tools/test_prepare_release.py
+!/tools/check_public_source.py
+!/tools/test_public_source_policy.py
