@@ -2,10 +2,10 @@ name: Flutter Android
 
 on:
   push:
-    branches: ['**']
-    paths: ['lib/**', 'test/**', 'android/**', 'shaders/**', 'assets/**', 'pubspec.*', 'analysis_options.yaml', '.github/workflows/flutter-ci.yml']
+    branches: ['master']
+    paths: ['lib/**', 'test/**', 'android/**', 'shaders/**', 'assets/**', 'tools/**', 'pubspec.*', 'analysis_options.yaml', '.github/workflows/flutter-ci.yml', '.github/workflows/android-release.yml']
   pull_request:
-    paths: ['lib/**', 'test/**', 'android/**', 'shaders/**', 'assets/**', 'pubspec.*', 'analysis_options.yaml', '.github/workflows/flutter-ci.yml']
+    paths: ['lib/**', 'test/**', 'android/**', 'shaders/**', 'assets/**', 'tools/**', 'pubspec.*', 'analysis_options.yaml', '.github/workflows/flutter-ci.yml', '.github/workflows/android-release.yml']
   workflow_dispatch:
 
 permissions:
