@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'native_effects.dart';
 
-/// A continuous blur radius, not an opaque gradient painted over the content.
+/// Reference radius profile for the continuous-kernel renderer. The default
+/// renderer feathers a live native Gaussian, without an opaque gradient fill.
 abstract final class ScrollEdgeProfile {
   static double sigma(double progress, {double maximum = 20}) {
     final depth = 1 - progress.clamp(0.0, 1.0);

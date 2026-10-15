@@ -13,7 +13,7 @@ FILES = (
     "tools/check_public_source.py", "tools/test_public_source_policy.py",
     "tools/verify_apk_runtime.py", "tools/test_verify_apk_runtime.py",
 )
-DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "android", "ios", "docs/images")
+DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "android", "ios", "docs/images", "third_party/liquid_glass_easy")
 PRIVATE_NAMES = {
     "local.properties", "key.properties", "GeneratedPluginRegistrant.java",
     "Generated.xcconfig", "flutter_export_environment.sh", ".DS_Store",

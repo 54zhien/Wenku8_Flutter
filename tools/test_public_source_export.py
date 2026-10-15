@@ -22,6 +22,9 @@ class PublicSourceExportTest(unittest.TestCase):
                      "android/app/src/main/jniLibs/arm64-v8a/libcpp.so",
                      "ios/Runner.xcodeproj/xcuserdata/private.xcuserstate",
                      "lib/performance_page.dart", "lib/render_budget_probe.dart",
+                     "third_party/liquid_glass_easy/pubspec.yaml",
+                     "third_party/liquid_glass_easy/LICENSE",
+                     "third_party/liquid_glass_easy/lib/liquid_glass_easy.dart",
                      "flutter_screenshots/private.png", "LISTENING.md", "README.md"):
             file = self.root / name
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -38,6 +41,9 @@ class PublicSourceExportTest(unittest.TestCase):
         self.export(output)
         files = {p.relative_to(output).as_posix() for p in output.rglob("*") if p.is_file()}
         self.assertEqual(files, {"README.md", "lib/main.dart",
+            "third_party/liquid_glass_easy/pubspec.yaml",
+            "third_party/liquid_glass_easy/LICENSE",
+            "third_party/liquid_glass_easy/lib/liquid_glass_easy.dart",
             "android/gradle/wrapper/gradle-wrapper.jar",
             "android/app/src/main/jniLibs/arm64-v8a/libcpp.so"})
 

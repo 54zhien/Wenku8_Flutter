@@ -132,8 +132,8 @@ void main() {
       (NativeEffect.glass, 0.0, 1),
       (NativeEffect.glass, .9, 3),
       (NativeEffect.glass, 8.0, 1),
-      (NativeEffect.progressive, 1.0, 2),
-      (NativeEffect.progressive, 8.0, 4),
+      (NativeEffect.progressive, 1.0, 1),
+      (NativeEffect.progressive, 8.0, 1),
     ]) {
       await tester.pumpWidget(
         MaterialApp(

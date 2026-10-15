@@ -173,7 +173,12 @@ void main() {
           (widget) =>
               widget is DecoratedBox &&
               widget.decoration is BoxDecoration &&
-              (widget.decoration as BoxDecoration).gradient != null,
+              (widget.decoration as BoxDecoration).backgroundBlendMode !=
+                  BlendMode.dstIn &&
+              ((widget.decoration as BoxDecoration).gradient?.colors.any(
+                    (c) => c.a > 0,
+                  ) ??
+                  false),
         ),
       ),
       findsNothing,

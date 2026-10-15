@@ -11,6 +11,7 @@ uniform vec4 uTint;
 uniform float uActivation;
 uniform float uTouch;
 uniform float uEmission;
+uniform float uOptimize;
 uniform sampler2D uInput;
 out vec4 fragColor;
 

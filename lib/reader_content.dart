@@ -35,14 +35,25 @@ String? readerIllustrationUrl(String paragraph) {
   if (uri == null ||
       !['https', 'http'].contains(uri.scheme) ||
       uri.userInfo.isNotEmpty ||
+      (uri.hasPort && ![80, 443].contains(uri.port)) ||
       !(uri.host == 'wenku8.com' ||
           uri.host.endsWith('.wenku8.com') ||
           uri.host == 'wenku8.net' ||
-          uri.host.endsWith('.wenku8.net'))) {
+          uri.host.endsWith('.wenku8.net') ||
+          uri.host == 'wenku8.cn' ||
+          uri.host.endsWith('.wenku8.cn') ||
+          uri.host == 'pic.777743.xyz')) {
     return null;
   }
-  return uri.replace(scheme: 'https').toString();
+  return uri.replace(scheme: 'https', port: 443).toString();
 }
+
+final _missingIllustration = RegExp(r'(^|\n)[ \t]*\[插图\][ \t]*(\n|$)');
+
+/// Old bodies lost the URL at these stand-alone image paragraphs. Ordinary
+/// prose containing the same words does not trigger a network refresh.
+bool readerHasMissingIllustrations(String body) =>
+    body.contains('[插图]') && _missingIllustration.hasMatch(body);
 
 typedef ParagraphPosition = ({int index, double fraction});
 typedef ParagraphTarget = ({double offset, bool exact});

@@ -13,6 +13,7 @@ uniform float uStage;
 uniform vec2 uViewport;
 uniform vec2 uOutputPadding;
 uniform float uCull;
+uniform float uOptimize;
 uniform sampler2D uInput;
 uniform sampler2D uSrgbLut;
 out vec4 fragColor;
@@ -114,7 +115,76 @@ void main() {
     float weights = 1.0;
     // Pixel-continuous radius. Dense prefiltering suppresses sparse-tap aliasing
     // at high sigma and high DPR, instead of repeating sharp letter fragments.
-    if (residual > 0.01) {
+    if (uOptimize > 0.5) {
+        // Same 33 taps and accumulation order. Bake the invariant Gaussian
+        // weights so mobile drivers need not unroll a loop or evaluate exp
+        // per tap/pixel. This is not a lower-quality or motion-only kernel.
+        vec2 offset;
+        offset = direction * (0.18750000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.98257546895790038;
+        weights += 1.96515093791580076;
+        offset = direction * (0.37500000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.93210249235952758;
+        weights += 1.86420498471905516;
+        offset = direction * (0.56250000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.85367636134514768;
+        weights += 1.70735272269029537;
+        offset = direction * (0.75000000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.75483960198900735;
+        weights += 1.50967920397801469;
+        offset = direction * (0.93750000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.64438872482519527;
+        weights += 1.28877744965039054;
+        offset = direction * (1.12500000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.53109599103534522;
+        weights += 1.06219198207069043;
+        offset = direction * (1.31250000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.42260044322318879;
+        weights += 0.84520088644637759;
+        offset = direction * (1.50000000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.32465246735834974;
+        weights += 0.64930493471669948;
+        offset = direction * (1.68750000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.24079047427224856;
+        weights += 0.48158094854449712;
+        offset = direction * (1.87500000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.17242162389375282;
+        weights += 0.34484324778750564;
+        offset = direction * (2.06250000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.11919992840264731;
+        weights += 0.23839985680529463;
+        offset = direction * (2.25000000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.07955950871822769;
+        weights += 0.15911901743645537;
+        offset = direction * (2.43750000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.05126725037065775;
+        weights += 0.10253450074131550;
+        offset = direction * (2.62500000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.03189479336215710;
+        weights += 0.06378958672431420;
+        offset = direction * (2.81250000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.01915717183712914;
+        weights += 0.03831434367425827;
+        offset = direction * (3.00000000 * residual);
+        color += (decodeInput(sampleEncoded(position + offset))
+            + decodeInput(sampleEncoded(position - offset))) * 0.01110899653824231;
+        weights += 0.02221799307648461;
+    } else if (residual > 0.01) {
         for (int i = 1; i <= 16; i++) {
             float t = float(i) * (3.0 / 16.0);
             float weight = exp(-0.5 * t * t);

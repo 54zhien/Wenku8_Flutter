@@ -12,17 +12,12 @@ const updateRepository = String.fromEnvironment(
   'UPDATE_REPOSITORY',
   defaultValue: 'mikufoxxx/Wenku8_Flutter',
 );
-const currentAppVersion = '0.2.2';
-const currentAppBuild = 4;
+const currentAppVersion = '0.2.3';
+const currentAppBuild = 5;
 const currentReleaseNotes = '''
-修复在线听书连接失败，更新语音服务校验协议。
-系统离线语音标为待开发，原离线选择回到在线音色，不自动播放。
-拖动字号与行距时隐藏设置背景，正文实时预览；松手后保存。
-新增系统字体与内置思源宋体开关，界面和阅读器一起生效。
-切换字体时保留阅读段落，选择可随偏好备份和恢复。
-移除立体书架下方的循环浏览提示，保留定位与翻册操作。
-设置增加关于栏，直接显示版本号和构建号。
-支持 GitHub Releases 更新检查、APK 下载与确认安装。
+1. 优化模糊
+2. 优化液态玻璃
+3. 修复插图显示
 ''';
 
 class ReleaseVersion implements Comparable<ReleaseVersion> {

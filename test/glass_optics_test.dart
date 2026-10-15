@@ -117,7 +117,7 @@ void main() {
     );
     final glass = tester.widget<NativeBackdrop>(find.byType(NativeBackdrop));
     expect(glass.effect, NativeEffect.glass);
-    expect(glass.tint.a, closeTo(.08, .001));
+    expect(glass.tint.a, closeTo(.87, .001));
     expect(glass.radius, 28);
     expect(glass.thickness, 20);
     expect(glass.blur, 0, reason: 'Small controls add no optical-blur passes.');

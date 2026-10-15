@@ -216,7 +216,7 @@ class LibraryState extends ChangeNotifier {
         key: _prefs.get(key),
     });
     _glassBlur = preference('glassBlur', 8, 0, 24);
-    _glassOpacity = preference('glassOpacity', .08, 0, 1);
+    _glassOpacity = preference('glassOpacity', .87, 0, 1);
     _keepScreenOn = _prefs.get('readerKeepScreenOn') == true;
     _shelfSort = switch (_prefs.get('shelfSort')) {
       'recentAdded' => 'recentAdded',
@@ -277,7 +277,7 @@ class LibraryState extends ChangeNotifier {
   AppTypeface _appTypeface = AppTypeface.system;
   PerformancePreferences _performance = const PerformancePreferences();
   double _glassBlur = 8;
-  double _glassOpacity = .08;
+  double _glassOpacity = .87;
   bool _disposed = false;
   bool _historyNotificationQueued = false;
 

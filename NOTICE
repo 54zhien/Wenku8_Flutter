@@ -30,3 +30,7 @@ Upstream commit: bd44c1d1aaebdc1db7f47456ee12431b42ec7cac.
 Full upstream notice: assets/licenses/edge-tts.txt.
 
 See docs/THIRD_PARTY.md for component provenance and license boundaries.
+
+Liquid Glass Easy 5.0.0: Copyright (c) 2025 Ahmed Gamil, MIT License.
+Source and license: third_party/liquid_glass_easy/. Modified 2026-10-15 to
+bound unnecessary single-lens shader output; see its PATCHES.md.

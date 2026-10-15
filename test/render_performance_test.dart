@@ -242,7 +242,9 @@ void main() {
         );
         final clipFinder = find.descendant(
           of: find.byType(NativeBackdrop),
-          matching: find.byType(ClipRRect),
+          matching: find.byWidgetPredicate(
+            (w) => w is ClipRRect && w.clipper != null,
+          ),
         );
         final clip = tester.widget<ClipRRect>(clipFinder);
         final clipSize = tester.getSize(clipFinder);

@@ -142,10 +142,7 @@ internal class Wenku8Bridge(context: Context, private val postToMain: (Runnable)
     }
 
     private fun illustration(raw: String): ByteArray = synchronized(imageLock) {
-        val url = URL(raw)
-        require(url.protocol == "https" && url.userInfo == null &&
-            (url.host == "wenku8.com" || url.host.endsWith(".wenku8.com") ||
-             url.host == "wenku8.net" || url.host.endsWith(".wenku8.net")))
+        val url = IllustrationUrlPolicy.parse(raw)
         val name = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray()).joinToString("") { "%02x".format(it) }
         val file = File(images, name)
         if (file.isFile) {
@@ -157,15 +154,7 @@ internal class Wenku8Bridge(context: Context, private val postToMain: (Runnable)
                 return@synchronized cached
             } catch (_: Exception) { file.delete() }
         }
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            connectTimeout = 5000
-            readTimeout = 12000
-            instanceFollowRedirects = false
-        }
-        try {
-            check(connection.responseCode in 200..299)
-            val bytes = connection.inputStream.use { readBounded(it, 8 * 1024 * 1024) }
-            validateImage(bytes)
+        val bytes = downloadIllustration(url)
             try {
                 images.mkdirs()
                 val temporary = File(images, "$name.part")
@@ -178,10 +167,35 @@ internal class Wenku8Bridge(context: Context, private val postToMain: (Runnable)
                     if (old != file) { val length = old.length(); if (old.delete()) size -= length }
                 }
             } catch (_: Exception) { /* An online illustration survives a cache write error. */ }
-            bytes
-        } finally {
-            connection.disconnect()
+        bytes
+    }
+
+    private fun downloadIllustration(source: URL): ByteArray {
+        var url = source
+        for (hop in 0..3) {
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 5000
+                readTimeout = 12000
+                instanceFollowRedirects = false
+            }
+            try {
+                val status = connection.responseCode
+                if (status in setOf(301, 302, 303, 307, 308)) {
+                    check(hop < 3) { "Too many image redirects" }
+                    val location = connection.getHeaderField("Location")
+                    require(!location.isNullOrBlank())
+                    url = IllustrationUrlPolicy.redirect(url, location)
+                } else {
+                    check(status in 200..299)
+                    val bytes = connection.inputStream.use { readBounded(it, 8 * 1024 * 1024) }
+                    validateImage(bytes)
+                    return bytes
+                }
+            } finally {
+                connection.disconnect()
+            }
         }
+        error("Image redirect limit")
     }
 
     private fun validateImage(bytes: ByteArray) {

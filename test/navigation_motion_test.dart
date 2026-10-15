@@ -84,14 +84,10 @@ void main() {
   ) async {
     await mountApp(tester);
     final selection = find.byKey(const ValueKey('dock-fluid-surface'));
+    expect(tester.widget(selection), isA<LiquidGlass>());
     expect(find.byType(DockSelectionLens), findsNothing);
     expect(
-      find.descendant(
-        of: selection,
-        matching: find.byWidgetPredicate(
-          (widget) => widget is ColoredBox && widget.color.a > .05,
-        ),
-      ),
+      find.descendant(of: selection, matching: find.byType(LiquidGlass)),
       findsNothing,
     );
     final nav = find.byKey(const ValueKey('dock-tab-1'));
@@ -105,12 +101,7 @@ void main() {
     await tester.tap(nav);
     await tester.pump(const Duration(milliseconds: 60));
     expect(
-      find.descendant(
-        of: selection,
-        matching: find.byWidgetPredicate(
-          (widget) => widget is ColoredBox && widget.color.a > .05,
-        ),
-      ),
+      find.descendant(of: selection, matching: find.byType(LiquidGlass)),
       findsNothing,
     );
     await tester.pumpAndSettle();

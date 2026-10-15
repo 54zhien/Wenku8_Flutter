@@ -1661,7 +1661,7 @@ class SettingsPage extends StatelessWidget {
                 GlassTextButton(
                   onPressed: () async {
                     await state.setGlassBlur(8);
-                    await state.setGlassOpacity(.08);
+                    await state.setGlassOpacity(.87);
                   },
                   child: const Text('恢复默认'),
                 ),
@@ -2730,6 +2730,7 @@ class _ReaderPageState extends State<ReaderPage>
       : widget.initialChapter.clamp(0, widget.novel.chapters.length - 1);
   late Future<({ReaderContent? content, Object? error})> _content;
   ReaderContent? _currentContent;
+  bool _illustrationsRefreshing = false;
   final _findMatch = ValueNotifier<ReaderMatch?>(null);
   final _bookmarkLanding = ValueNotifier<int?>(null);
   Timer? _bookmarkLandingTimer;
@@ -3079,6 +3080,7 @@ class _ReaderPageState extends State<ReaderPage>
     _highlightTimer?.cancel();
     _findMatch.value = null;
     _currentContent = null;
+    _illustrationsRefreshing = false;
     _ready = false;
     _restorePending = position;
     _restoreQueued = false;
@@ -3141,6 +3143,10 @@ class _ReaderPageState extends State<ReaderPage>
           if (mounted && generation == _contentGeneration) {
             _listeningTarget = null;
             _listeningChanged();
+            if (content.paragraphs.any((p) => p.trim() == '[插图]') &&
+                widget.repository is OfflineNovelRepository) {
+              unawaited(_refreshIllustrations(automatic: true));
+            }
           }
         });
         final reduce =
@@ -3246,10 +3252,39 @@ class _ReaderPageState extends State<ReaderPage>
     );
   }
 
-  void _refreshIllustrations() {
-    _restorePending = _currentPosition();
-    _restoreTicket++;
-    setState(() => _content = _loadContent(refresh: true));
+  Future<void> _refreshIllustrations({bool automatic = false}) async {
+    if (_illustrationsRefreshing) return;
+    final chapter = _chapter;
+    final generation = _contentGeneration;
+    setState(() => _illustrationsRefreshing = true);
+    try {
+      final body = automatic
+          ? await (widget.repository as OfflineNovelRepository)
+                .repairChapterIllustrations(
+                  widget.novel.id,
+                  widget.novel.chapters[chapter],
+                )
+          : await _requestContent(chapter, refresh: true);
+      if (body == null) return;
+      final content = await ReaderContent.parse(body);
+      if (!mounted || chapter != _chapter || generation != _contentGeneration) {
+        return;
+      }
+      final position = _currentPosition();
+      if (position != null) _prepareRestore(position);
+      setState(() {
+        _currentContent = content;
+        _content = Future.value((content: content, error: null));
+      });
+    } catch (_) {
+      if (!automatic && mounted && chapter == _chapter) {
+        showNovelFeedback(context, '插图暂未更新成功，正文已保留，可稍后重试');
+      }
+    } finally {
+      if (mounted && generation == _contentGeneration) {
+        setState(() => _illustrationsRefreshing = false);
+      }
+    }
   }
 
   Widget _paragraphContent(
@@ -3272,18 +3307,31 @@ class _ReaderPageState extends State<ReaderPage>
       );
     }
     if (paragraphs[index].trim() == '[插图]') {
-      return ContentPanel(
-        child: Column(
-          children: [
-            const Icon(CupertinoIcons.photo),
-            const SizedBox(height: 10),
-            const Text('这份旧缓存未保存插图地址'),
-            GlassTextButton(
-              onPressed: _refreshIllustrations,
-              child: const Text('更新本章插图'),
-            ),
-          ],
-        ),
+      // Match the loaded image's extent: replacing a URL-less slot must not
+      // collapse/expand the article while the user keeps reading below it.
+      return SizedBox(
+        height: (MediaQuery.sizeOf(context).width - 52) * 4 / 3,
+        child: _illustrationsRefreshing
+            ? const LoadingSkeleton(
+                layout: SkeletonLayout.cover,
+                label: '正在补全插图',
+              )
+            : ContentPanel(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(CupertinoIcons.photo),
+                      const SizedBox(height: 10),
+                      const Text('暂未取得本章插图地址'),
+                      GlassTextButton(
+                        onPressed: _refreshIllustrations,
+                        child: const Text('重试本章插图'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
       );
     }
     return ReaderHighlightText(

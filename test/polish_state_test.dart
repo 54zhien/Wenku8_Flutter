@@ -204,7 +204,7 @@ void main() {
       expect(state.theme, ThemeMode.system);
       expect(state.reduceMotion, isFalse);
       expect(state.glassBlur, 8);
-      expect(state.glassOpacity, .08);
+      expect(state.glassOpacity, .87);
       var typography = 0;
       var appearance = 0;
       state.readerSettingsChanges.addListener(() => typography++);

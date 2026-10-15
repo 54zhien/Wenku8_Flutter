@@ -6,13 +6,21 @@ import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' show Theme;
+import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
+import 'easy_glass.dart';
 import 'glass_sampling_budget.dart';
 import 'performance_preferences.dart';
 
 /// Runtime effects execute on Android's Impeller GPU, without frame copies,
 /// platform-view overlays or a CPU bitmap blur.
 abstract final class NativeEffects {
+  /// A compile-time switch keeps the previous renderer available for the
+  /// identical Profile workload when diagnosing a rendering regression.
+  static const easyGlass = bool.fromEnvironment(
+    'EASY_LIQUID_GLASS',
+    defaultValue: true,
+  );
   static ui.FragmentProgram? _progressive;
   static ui.FragmentProgram? _glass;
   static ui.Image? _srgbLut;
@@ -24,6 +32,7 @@ abstract final class NativeEffects {
   }
 
   static Future<void> _load() async {
+    if (easyGlass) await LiquidGlassShaders.ensureLoaded();
     final lut = _makeSrgbLut();
     final programs = await Future.wait([
       ui.FragmentProgram.fromAsset('shaders/continuous_blur.frag'),
@@ -75,7 +84,23 @@ abstract final class NativeEffects {
       return ui.ImageFilter.shader(shader);
     }
 
-    const optics = <double>[0, 0, 32, 32, 8, 4, 1.45, 0, 0, 0, 0, 0, .5, .01];
+    const optics = <double>[
+      0,
+      0,
+      32,
+      32,
+      8,
+      4,
+      1.45,
+      0,
+      0,
+      0,
+      0,
+      0,
+      .5,
+      .01,
+      1,
+    ];
     ui.ImageFilter glass() => runtimeFilter(_glass!, optics);
     final cull =
         const bool.fromEnvironment(
@@ -105,6 +130,7 @@ abstract final class NativeEffects {
       32,
       32,
       cull,
+      1,
     ], lut: true);
     drawFiltered(glass());
     // Match the composed graph as well: an intermediate MSAA render target can
@@ -205,14 +231,16 @@ class _NativeGlassGroupState extends State<NativeGlassGroup> {
     if (widget.inherit && _GlassInputScope.maybeOf(context) != null) {
       return widget.child;
     }
-    return _GlassInputScope(
-      group:
-          widget.enabled &&
-              const bool.fromEnvironment('GLASS_BATCH', defaultValue: true)
-          ? _group
-          : null,
+    final enabled =
+        widget.enabled &&
+        const bool.fromEnvironment('GLASS_BATCH', defaultValue: true);
+    final scope = _GlassInputScope(
+      group: enabled ? _group : null,
       child: widget.child,
     );
+    return NativeEffects.easyGlass
+        ? LiquidGlassBatch(enabled: enabled, child: scope)
+        : scope;
   }
 
   @override
@@ -230,6 +258,55 @@ class _GlassInputScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_GlassInputScope oldWidget) =>
+      group != oldWidget.group;
+}
+
+/// Only the pinned, non-overlapping scroll edges share this snapshot. Their
+/// source (the page) is complete before either edge paints. Glass controls keep
+/// their own group so they still refract the already-blurred header underneath.
+class NativeScrollEdgeGroup extends StatefulWidget {
+  const NativeScrollEdgeGroup({
+    super.key,
+    required this.child,
+    this.enabled = true,
+  });
+  final Widget child;
+  final bool enabled;
+  @override
+  State<NativeScrollEdgeGroup> createState() => _NativeScrollEdgeGroupState();
+}
+
+class _NativeScrollEdgeGroupState extends State<NativeScrollEdgeGroup> {
+  final _group = _GlassInputGroup();
+  @override
+  Widget build(BuildContext context) =>
+      _ScrollEdgeInputScope.maybeOf(context) != null
+      ? widget.child
+      : _ScrollEdgeInputScope(
+          group:
+              widget.enabled &&
+                  const bool.fromEnvironment(
+                    'SCROLL_EDGE_BATCH',
+                    defaultValue: true,
+                  )
+              ? _group
+              : null,
+          child: widget.child,
+        );
+  @override
+  void dispose() {
+    _group.dispose();
+    super.dispose();
+  }
+}
+
+class _ScrollEdgeInputScope extends InheritedWidget {
+  const _ScrollEdgeInputScope({required this.group, required super.child});
+  final _GlassInputGroup? group;
+  static _ScrollEdgeInputScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_ScrollEdgeInputScope>();
+  @override
+  bool updateShouldNotify(_ScrollEdgeInputScope oldWidget) =>
       group != oldWidget.group;
 }
 
@@ -273,6 +350,8 @@ class NativeBackdrop extends StatefulWidget {
     this.cullUnusedPixels = true,
     this.tightSampling = true,
     this.bypass = false,
+    this.optimizedSampling = true,
+    this.nativeEdgeBlur = true,
   });
 
   final NativeEffect effect;
@@ -301,6 +380,18 @@ class NativeBackdrop extends StatefulWidget {
   /// A live settings preview paints only its child, without a backdrop pass.
   final bool bypass;
 
+  /// Retains the reference kernel for native pixel-parity checks.
+  final bool optimizedSampling;
+
+  /// Keep the previous continuous-radius solver available for A/B diagnosis.
+  /// The default preserves live blur and a smooth feather using the GPU's
+  /// native Gaussian/downsample path instead of repeated runtime convolution.
+  final bool nativeEdgeBlur;
+  bool get _nativeEdge =>
+      effect == NativeEffect.progressive &&
+      nativeEdgeBlur &&
+      const bool.fromEnvironment('NATIVE_SCROLL_EDGE_BLUR', defaultValue: true);
+
   NativeBackdrop withoutBlur() => NativeBackdrop(
     effect: effect,
     plateau: plateau,
@@ -324,6 +415,8 @@ class NativeBackdrop extends StatefulWidget {
     cullUnusedPixels: cullUnusedPixels,
     tightSampling: tightSampling,
     bypass: bypass,
+    optimizedSampling: optimizedSampling,
+    nativeEdgeBlur: nativeEdgeBlur,
     child: child,
   );
 
@@ -413,6 +506,14 @@ class _NativeBackdropState extends State<NativeBackdrop> {
     if (config.effect == NativeEffect.progressive && config.blur <= 0) {
       return widget.child;
     }
+    if (config._nativeEdge) {
+      return EasyScrollEdge(
+        blur: config.blur,
+        plateau: config.plateau,
+        fromBottom: config.fromBottom,
+        child: config.child,
+      );
+    }
     if (config.effect == NativeEffect.glass && config.thickness <= 0) {
       if (widget.morph != null) {
         return AnimatedBuilder(
@@ -428,6 +529,39 @@ class _NativeBackdropState extends State<NativeBackdrop> {
         borderRadius: BorderRadius.circular(widget.radius),
         child: ColoredBox(color: widget.tint, child: widget.child),
       );
+    }
+    if (config.effect == NativeEffect.glass && NativeEffects.easyGlass) {
+      Widget surface() {
+        final morph = config.morph;
+        final surface = EasyGlassSurface(
+          radius: morph?.resolve(morph.radius, config.radius) ?? config.radius,
+          thickness:
+              morph?.resolve(morph.thickness, config.thickness) ??
+              config.thickness,
+          blur: morph?.resolve(morph.blur, config.blur) ?? config.blur,
+          refractiveIndex: config.refractiveIndex,
+          tint: config.tint,
+          emission: config.emission,
+          activation: config.activation,
+          independent:
+              config.preserveOptics || morph != null || config.activation > 0,
+          physicalOptics: config.preserveOptics,
+          child: config.child,
+        );
+        return config.preserveOptics
+            ? ClipRRect(
+                clipper: _MorphGlassClipper(config, context),
+                child: surface,
+              )
+            : surface;
+      }
+
+      return config.morph == null
+          ? surface()
+          : AnimatedBuilder(
+              animation: config.morph!.animation,
+              builder: (context, _) => surface(),
+            );
     }
     final program = config.effect == NativeEffect.progressive
         ? NativeEffects._progressive
@@ -523,7 +657,9 @@ class _NativeBackdropState extends State<NativeBackdrop> {
       program: program,
       dpr: MediaQuery.devicePixelRatioOf(context),
       viewport: View.of(context).physicalSize,
-      group: _GlassInputScope.maybeOf(context)?.group,
+      group: config.effect == NativeEffect.progressive
+          ? _ScrollEdgeInputScope.maybeOf(context)?.group
+          : _GlassInputScope.maybeOf(context)?.group,
       child: widget.child,
     );
   }
@@ -544,7 +680,8 @@ class _MorphGlassClipper extends CustomClipper<ui.RRect> {
       ui.Offset.zero & size,
     );
     final radius = math.min(
-      config.morph!.resolve(config.morph!.radius, config.radius),
+      config.morph?.resolve(config.morph!.radius, config.radius) ??
+          config.radius,
       rect.shortestSide / 2,
     );
     return ui.RRect.fromRectAndRadius(
@@ -688,7 +825,8 @@ class _NativeBackdropRender extends RenderProxyBox {
         config.preserveOptics != value.preserveOptics ||
         config.morph != value.morph ||
         config.cullUnusedPixels != value.cullUnusedPixels ||
-        config.tightSampling != value.tightSampling;
+        config.tightSampling != value.tightSampling ||
+        config.optimizedSampling != value.optimizedSampling;
     config = value;
     dpr = ratio;
     viewport = viewSize;
@@ -775,6 +913,12 @@ class _NativeBackdropRender extends RenderProxyBox {
     }
 
     bounds(first);
+    final optimized =
+        config.optimizedSampling &&
+        const bool.fromEnvironment(
+          'GLASS_OPTIMIZED_SHADER',
+          defaultValue: true,
+        );
     if (config.effect == NativeEffect.glass) {
       void optics(ui.FragmentShader shader) {
         bounds(shader);
@@ -788,7 +932,8 @@ class _NativeBackdropRender extends RenderProxyBox {
           ..setFloat(12, config.tint.a)
           ..setFloat(13, config.activation.clamp(0, 1))
           ..setFloat(14, config.touchPosition.clamp(0, 1))
-          ..setFloat(15, config.emission.clamp(0, .05));
+          ..setFloat(15, config.emission.clamp(0, .05))
+          ..setFloat(16, optimized ? 1 : 0);
       }
 
       optics(first);
@@ -845,6 +990,7 @@ class _NativeBackdropRender extends RenderProxyBox {
         // Cull only pixels outside every downstream sampling dependency.
         // Preserve all offsets, accumulation order and both intermediates.
         shader.setFloat(16, cull ? 1 : 0);
+        shader.setFloat(17, optimized ? 1 : 0);
       }
 
       // Keep the established clear-core optics for navigation/controls. Broad
@@ -984,7 +1130,8 @@ class _NativeBackdropRender extends RenderProxyBox {
               ? halo + (axis == 0 ? 3 * prefilter : 0) + 2
               : (axis == 0 ? halo : 0) + 2,
         )
-        ..setFloat(16, cull ? 1 : 0);
+        ..setFloat(16, cull ? 1 : 0)
+        ..setFloat(17, optimized ? 1 : 0);
     }
     // Average linear light inside each pass, but store its result in sRGB.
     // Storing dark linear values in an 8-bit intermediate texture causes
@@ -1050,10 +1197,10 @@ class _GlassInputGroup {
         if (!member.attached ||
             !member.hasSize ||
             member.size.isEmpty ||
-            config.effect != NativeEffect.glass ||
-            config.thickness <= 0 ||
+            config.effect != render.config.effect ||
+            (config.effect == NativeEffect.glass && config.thickness <= 0) ||
             config.morph != null ||
-            config.blur > 3) {
+            (config.effect == NativeEffect.glass && config.blur > 3)) {
           continue;
         }
         var visible = true;

@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import 'catalog.dart';
 import 'offline_cache.dart';
+import 'reader_content.dart'
+    show readerHasMissingIllustrations, readerIllustrationUrl;
 import 'ui_notifiers.dart';
 
 enum DownloadPhase {
@@ -64,6 +66,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
   final Map<int, Novel> _known = {};
   final Set<int> _offlineDirectories = {};
   final Map<(int, int, CacheEpoch), _ChapterRequest> _requests = {};
+  final Set<(int, int, CacheEpoch)> _illustrationRepairs = {};
   final Map<int, ChapterDownload> _jobs = {};
   final Queue<ChapterDownload> _queue = Queue();
   final Map<int, FrameChangeNotifier> _bookChanges = {};
@@ -138,12 +141,63 @@ class OfflineNovelRepository extends FrameChangeNotifier
   /// request keeps the previous offline body; no cache purge is necessary.
   Future<String> refreshChapterContent(int id, NovelChapter chapter) async {
     final epoch = cache.epochFor(id);
-    final text = await remote.chapterContent(id, chapter);
-    if (text.trim().isEmpty) throw const FormatException('章节正文为空');
-    if (cache.isCurrent(id, epoch)) {
-      await cache.saveChapter(id, chapter.id, text, epoch: epoch);
+    final request = _retainRequest(id, chapter.id, epoch);
+    try {
+      final previous = await cache.readChapter(id, chapter.id);
+      final text = await _fetch(id, chapter, request);
+      if (previous != null &&
+          readerHasMissingIllustrations(previous) &&
+          !_hasIllustration(text)) {
+        throw const FormatException('暂未获取到本章插图地址，请稍后重试');
+      }
+      await _saveBody(id, chapter.id, text, epoch);
+      return text;
+    } finally {
+      _releaseRequest(request);
     }
-    return text;
+  }
+
+  static bool _hasIllustration(String text) => text
+      .split('\n\n')
+      .any((paragraph) => readerIllustrationUrl(paragraph) != null);
+
+  Future<void> _saveBody(int id, int cid, String text, CacheEpoch epoch) async {
+    if (_disposed || !cache.isCurrent(id, epoch)) return;
+    try {
+      await cache.saveChapter(id, cid, text, epoch: epoch);
+      cacheError = null;
+    } catch (error) {
+      cacheError = error;
+      _changed(id);
+    }
+  }
+
+  /// Called after the reader has displayed its cached paragraphs, so an offline
+  /// image repair never holds readable text behind a network timeout.
+  Future<String?> repairChapterIllustrations(
+    int id,
+    NovelChapter chapter,
+  ) async {
+    if (chapter.id <= 0) return null;
+    final epoch = cache.epochFor(id);
+    final request = _retainRequest(id, chapter.id, epoch);
+    try {
+      final saved = await cache.readChapter(id, chapter.id);
+      if (saved == null || !readerHasMissingIllustrations(saved)) return null;
+      if (!_illustrationRepairs.add(request.key) && request.response == null) {
+        return null;
+      }
+      final repaired = await _fetch(id, chapter, request);
+      if (!_hasIllustration(repaired)) return null;
+      await _saveBody(id, chapter.id, repaired, epoch);
+      return repaired;
+    } catch (_) {
+      // Continue reading the existing offline body. A user-initiated refresh
+      // bypasses the attempted-repair set when connectivity returns.
+      return null;
+    } finally {
+      _releaseRequest(request);
+    }
   }
 
   @override
@@ -273,15 +327,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
       final saved = await cache.readChapter(novelId, chapter.id);
       if (saved != null) return saved;
       final text = await _fetch(novelId, chapter, request);
-      if (!_disposed) {
-        try {
-          await cache.saveChapter(novelId, chapter.id, text, epoch: epoch);
-          cacheError = null;
-        } catch (error) {
-          cacheError = error;
-          _changed();
-        }
-      }
+      await _saveBody(novelId, chapter.id, text, epoch);
       return text;
     } finally {
       _releaseRequest(request);
@@ -408,6 +454,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
     // completion must not remove that later user action's progress entry.
     if (identical(_jobs[id], previousJob)) _jobs.remove(id);
     _offlineDirectories.remove(id);
+    _illustrationRepairs.removeWhere((key) => key.$1 == id);
     cacheError = null;
     _changed(id);
   }
@@ -420,6 +467,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
     await cache.clear();
     _jobs.removeWhere((_, job) => !cache.isCurrent(job.novel.id, job.epoch));
     _offlineDirectories.clear();
+    _illustrationRepairs.clear();
     cacheError = null;
     _changed();
   }

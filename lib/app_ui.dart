@@ -33,7 +33,7 @@ class GlassAppearance extends InheritedWidget {
     super.key,
     required super.child,
     this.blur = 8,
-    this.opacity = .08,
+    this.opacity = .87,
   });
 
   final double blur;
@@ -162,7 +162,9 @@ class Atmosphere extends StatelessWidget {
               : [ArchiveDesign.surface, ArchiveDesign.background],
         ),
       ),
-      child: shareGlass ? NativeGlassGroup(child: background) : background,
+      child: NativeScrollEdgeGroup(
+        child: shareGlass ? NativeGlassGroup(child: background) : background,
+      ),
     );
   }
 }

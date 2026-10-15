@@ -11,6 +11,7 @@ import 'package:wenku8_flutter/offline_cache.dart';
 import 'package:wenku8_flutter/offline_repository.dart';
 import 'package:wenku8_flutter/offline_widgets.dart';
 import 'package:wenku8_flutter/pages.dart';
+import 'package:wenku8_flutter/reader_illustrations.dart';
 
 import 'support/offline_fixture.dart';
 
@@ -106,6 +107,71 @@ void main({
     state.dispose();
     if (await directory.exists()) await directory.delete(recursive: true);
   });
+
+  testWidgets(
+    'old image slots repair after text appears and keep text on failure',
+    (tester) async {
+      const old = '前文。\n\n[插图]\n\n后文。';
+      const fresh =
+          '前文。\n\n<!--image-->https://pic.777743.xyz/1/a.jpg<!--image-->\n\n后文。';
+      final held = remote.held[71001] = Completer<String>();
+      await tester.runAsync(() async {
+        await repository.rememberDirectory(novel);
+        await cache.saveChapter(71, 71001, old, epoch: cache.epochFor(71));
+      });
+      await tester.pumpWidget(
+        _app(
+          ReaderPage(
+            novel: novel,
+            state: state,
+            repository: repository,
+            initialChapter: 0,
+          ),
+          GlobalKey(),
+        ),
+      );
+      await _settleIo(tester);
+      expect(find.text('前文。'), findsOneWidget);
+      expect(remote.activeReads, 1);
+      final slot = find.byWidgetPredicate(
+        (w) => w is LoadingSkeleton && w.label == '正在补全插图',
+      );
+      expect(slot, findsOneWidget);
+      final height = tester.getSize(slot).height;
+      held.completeError(StateError('fixture offline'));
+      await _settleIo(tester);
+      expect(find.text('前文。'), findsOneWidget);
+      expect(find.text('重试本章插图'), findsOneWidget);
+      expect(await tester.runAsync(() => cache.readChapter(71, 71001)), old);
+      remote.held.remove(71001);
+      remote.books[71] = novel.withChapters([
+        const NovelChapter('插图', fresh, id: 71001),
+      ]);
+      await tester.drag(
+        find.byKey(const ValueKey('reader-scroll')),
+        const Offset(0, -360),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('重试本章插图').hitTestable(), findsOneWidget);
+      await _tapIo(
+        tester,
+        find.text('重试本章插图').hitTestable(),
+        until: () =>
+            remote.calls.where((call) => call == 'text:71:71001').length == 2,
+      );
+      await _settleIo(tester);
+      expect(await tester.runAsync(() => cache.readChapter(71, 71001)), fresh);
+      expect(find.byType(ReaderIllustration), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(ReaderIllustration)).height,
+        closeTo(height, .01),
+      );
+      expect(find.text('暂未取得本章插图地址'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _settleIo(tester);
+    },
+  );
 
   testWidgets('download menu reuses glass and downloaded body reads offline', (
     tester,

@@ -41,6 +41,22 @@ void main() {
         fragColor = vec4(0.0);
         return;
     }
+    // The flat core has exactly zero displacement. Its source/tint/emission
+    // need no normal, refract, square roots or quad resampling. The 4px guard
+    // keeps every derivative quad used by the curved rim on the reference path.
+    // Contact deformation deliberately keeps the full analytic evaluation.
+    if (uOptimize > 0.5 && uActivation <= 0.0) {
+        float radius = min(uRadius, min(uRect.z, uRect.w) * 0.5);
+        vec2 q = distance - uRect.zw * 0.5 + radius;
+        float sd = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+        if (sd < -uThickness - 4.0) {
+            vec4 color = sampleInput(position);
+            color.rgb = mix(color.rgb, uTint.rgb * color.a, uTint.a);
+            color.rgb = min(vec3(color.a), color.rgb + vec3(uEmission * color.a));
+            fragColor = color;
+            return;
+        }
+    }
     vec3 center = glassPoint(position);
     float aa = max(fwidth(center.z), 1.0);
     vec2 dx = dFdx(center.xy) * 0.25;
