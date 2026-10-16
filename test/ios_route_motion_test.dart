@@ -22,6 +22,10 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   final channels = <MethodChannel>[];
   final created = <Map>[];
+  int controlCount() =>
+      created.where((view) => view['kind'] != 'gaussianEdge').length;
+  int gaussianCount() =>
+      created.where((view) => view['kind'] == 'gaussianEdge').length;
   setUp(() {
     messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
       call,
@@ -161,7 +165,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(state.effectiveReduceMotion, isFalse);
-      final nativeBefore = created.length;
+      final nativeBefore = controlCount();
+      final edgesBefore = gaussianCount();
       await tester.tap(
         find.descendant(
           of: find.byKey(const ValueKey('archive-shelf-open')),
@@ -186,11 +191,12 @@ void main() {
       expect(bend.debugPlane.horizontal.dy, isNot(0));
       expect(tester.getRect(flight), isNot(firstRect));
       expect(
-        created.length,
+        controlCount(),
         nativeBefore,
         reason:
             'The real paper flight must not create destination UIKit controls.',
       );
+      expect(gaussianCount(), edgesBefore + (sharedIOSGaussianEnabled ? 2 : 0));
       await tester.pump(const Duration(milliseconds: 400));
       expect(bend.progress, closeTo(.62, .005));
       expect(tester.getRect(flight), isNot(firstRect));
@@ -202,7 +208,7 @@ void main() {
       );
       expect(tester.getSize(cover), const Size(118, 166));
       expect(tester.binding.transientCallbackCount, 0);
-      final admitted = created.length;
+      final admitted = controlCount();
       if (nativeIOSGlassEnabled) expect(admitted, greaterThan(nativeBefore));
       Navigator.of(tester.element(cover)).pop();
       await tester.pump();
@@ -213,7 +219,7 @@ void main() {
       );
       expect(returning.progress, inExclusiveRange(0, 1));
       expect(returning.debugMeshDraws, greaterThan(0));
-      expect(created.length, admitted);
+      expect(controlCount(), admitted);
       await tester.pumpAndSettle();
       expect(find.byType(DetailPage), findsNothing);
       expect(flight, findsNothing);
@@ -256,7 +262,8 @@ void main() {
           await tester.tapAt(point);
         }
         await tester.pumpAndSettle();
-        final count = created.length;
+        final count = controlCount();
+        final edgesBefore = gaussianCount();
         await Scrollable.ensureVisible(
           tester.element(find.text('阅读历史')),
           alignment: .5,
@@ -276,15 +283,19 @@ void main() {
         expect(early, greaterThan(0));
         await tester.pump(const Duration(milliseconds: 100));
         expect(tester.getTopLeft(page).dx, inExclusiveRange(0, early));
-        expect(created.length, count);
+        expect(controlCount(), count);
+        expect(
+          gaussianCount(),
+          edgesBefore + (sharedIOSGaussianEnabled ? 1 : 0),
+        );
         await tester.pumpAndSettle();
         expect(tester.getTopLeft(page).dx, closeTo(0, .001));
-        final admitted = created.length;
+        final admitted = controlCount();
         Navigator.of(tester.element(page)).pop();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 80));
         expect(tester.getTopLeft(page).dx, greaterThan(0));
-        expect(created.length, admitted);
+        expect(controlCount(), admitted);
         await tester.pumpAndSettle();
         expect(page, findsNothing);
         expect(find.byType(SettingsPage), findsOneWidget);

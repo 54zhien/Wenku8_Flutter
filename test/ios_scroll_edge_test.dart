@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wenku8_flutter/ios_scroll_edge.dart';
+import 'package:wenku8_flutter/ios_glass.dart';
+import 'package:flutter/services.dart';
 import 'package:wenku8_flutter/easy_glass.dart';
 import 'package:wenku8_flutter/native_effects.dart';
 import 'package:wenku8_flutter/performance_preferences.dart';
@@ -124,6 +126,18 @@ void main() {
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      SystemChannels.platform_views,
+      (_) async => null,
+    );
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        null,
+      ),
+    );
     await tester.pumpWidget(
       const MaterialApp(
         home: Center(
@@ -140,17 +154,28 @@ void main() {
         ),
       ),
     );
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is DecoratedBox &&
-            widget.decoration is BoxDecoration &&
-            (widget.decoration as BoxDecoration).backgroundBlendMode ==
-                BlendMode.dstIn,
-      ),
-      findsOneWidget,
-      reason: 'The continuous upstream feather belongs to the Flutter plane.',
-    );
+    if (sharedIOSGaussianEnabled) {
+      expect(find.byType(UiKitView), findsOneWidget);
+      expect(tester.widget<UiKitView>(find.byType(UiKitView)).creationParams, {
+        'kind': 'gaussianEdge',
+        'sigma': 8.0,
+        'plateau': 60.0,
+        'fromBottom': false,
+      });
+      expect(tester.layers.whereType<BackdropFilterLayer>(), isEmpty);
+    } else {
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).backgroundBlendMode ==
+                  BlendMode.dstIn,
+        ),
+        findsOneWidget,
+        reason: 'The continuous upstream feather belongs to the Flutter plane.',
+      );
+    }
     expect(find.byType(ShaderMask), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

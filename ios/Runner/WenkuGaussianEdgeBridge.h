@@ -19,8 +19,11 @@ NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT UIView * _Nullable WenkuGaussianProbeClip(CGRect frame);
 FOUNDATION_EXPORT BOOL WenkuGaussianProbeApply(UIView *clip, CGFloat sigma);
 FOUNDATION_EXPORT BOOL WenkuGaussianProbeClear(UIView *clip);
-FOUNDATION_EXPORT UIVisualEffectView * _Nullable WenkuGaussianProbePlaneEffect(
-    CGRect frame, CGFloat sigma, CGFloat plateau, BOOL fromBottom);
 #endif
+
+/// One full-width untinted Gaussian, using the pinned engine's filter factory.
+/// Its mask is directly on the effect; it does not hook ancestor clipping.
+FOUNDATION_EXPORT UIVisualEffectView * _Nullable WenkuGaussianCreatePlaneEffect(
+    CGRect frame, CGFloat sigma, CGFloat plateau, BOOL fromBottom);
 
 NS_ASSUME_NONNULL_END

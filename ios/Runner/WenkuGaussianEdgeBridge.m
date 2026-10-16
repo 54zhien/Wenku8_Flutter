@@ -5,6 +5,15 @@
 
 static BOOL InstallAdapter(void);
 static CGFloat AlphaAt(NSDictionary *edge, CGFloat y);
+static BOOL HasReturnType(Class cls, SEL selector, const char *type, unsigned arguments);
+static BOOL HasArgumentType(Class cls, SEL selector, unsigned index, const char *type) {
+  Method method = class_getInstanceMethod(cls, selector);
+  if (!method || method_getNumberOfArguments(method) <= index) return NO;
+  char *actual = method_copyArgumentType(method, index);
+  BOOL valid = actual && strcmp(actual, type) == 0;
+  free(actual);
+  return valid;
+}
 
 // These selectors belong to the pinned open-source Flutter engine, NOT UIKit
 // private classes. Do not extract CAFilter objects or change blur/tint here.
@@ -43,10 +52,17 @@ BOOL WenkuGaussianProbeClear(UIView *clip) {
   [clip applyBlurBackdropFilters:@[]];
   return YES;
 }
-UIVisualEffectView *WenkuGaussianProbePlaneEffect(CGRect frame, CGFloat sigma, CGFloat plateau, BOOL fromBottom) {
+#endif
+UIVisualEffectView *WenkuGaussianCreatePlaneEffect(CGRect frame, CGFloat sigma, CGFloat plateau, BOOL fromBottom) {
   Class cls = NSClassFromString(@"PlatformViewFilter");
-  if (!InstallAdapter() || ![cls instancesRespondToSelector:
-      @selector(initWithFrame:blurRadius:cornerRadius:visualEffectView:)] ||
+  if (!cls || !HasReturnType(cls, @selector(initWithFrame:blurRadius:cornerRadius:visualEffectView:), @encode(id), 6) ||
+      !HasArgumentType(cls, @selector(initWithFrame:blurRadius:cornerRadius:visualEffectView:), 2, @encode(CGRect)) ||
+      !HasArgumentType(cls, @selector(initWithFrame:blurRadius:cornerRadius:visualEffectView:), 3, @encode(CGFloat)) ||
+      !HasArgumentType(cls, @selector(initWithFrame:blurRadius:cornerRadius:visualEffectView:), 4, @encode(CGFloat)) ||
+      !HasArgumentType(cls, @selector(initWithFrame:blurRadius:cornerRadius:visualEffectView:), 5, @encode(id)) ||
+      !HasReturnType(cls, @selector(backdropFilterView), @encode(id), 2) ||
+      !isfinite(frame.origin.x) || !isfinite(frame.origin.y) ||
+      !isfinite(frame.size.width) || !isfinite(frame.size.height) || !isfinite(sigma) || !isfinite(plateau) ||
       frame.size.width <= 0 || frame.size.height <= 0 || sigma <= 0) return nil;
   id<WenkuEngineGaussianFilter> filter = [[cls alloc] initWithFrame:frame blurRadius:sigma cornerRadius:0
     visualEffectView:[[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleLight]]];
@@ -65,7 +81,6 @@ UIVisualEffectView *WenkuGaussianProbePlaneEffect(CGRect frame, CGFloat sigma, C
   effect.maskView = mask; effect.userInteractionEnabled = NO;
   return effect;
 }
-#endif
 @implementation WenkuFeatherMask
 + (Class)layerClass { return CAGradientLayer.class; }
 @end

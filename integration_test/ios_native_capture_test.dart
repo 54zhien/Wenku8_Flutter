@@ -8,10 +8,12 @@ import 'package:integration_test/integration_test.dart';
 import 'package:wenku8_flutter/ios_glass.dart';
 import 'package:wenku8_flutter/ios_scroll_edge.dart';
 import 'package:wenku8_flutter/app_ui.dart';
+import 'support/native_host.dart';
 
-void main() {
+Future<void> main() async {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  await awaitNativeTestHost(binding);
   final reports = <String, Object?>{};
   Future<void> saveReports() => File(
     '${Directory.systemTemp.path}/wenku-native-capture-probe.json',
@@ -155,7 +157,7 @@ void main() {
                       width: 128,
                       height: 180,
                       child: IgnorePointer(
-                        child: IOSScrollEdge(
+                        child: IOSScrollEdge.legacy(
                           blur: 8,
                           plateau: 60,
                           fromBottom: value.bottom,
@@ -294,7 +296,12 @@ void main() {
                     child: IgnorePointer(
                       child: UiKitView(
                         viewType: 'org.mewx.wenku8/glass_controls',
-                        creationParams: const {'kind': 'sharedEdgeProbe'},
+                        creationParams: const {
+                          'kind': 'gaussianEdge',
+                          'sigma': 8.0,
+                          'plateau': 60.0,
+                          'fromBottom': false,
+                        },
                         creationParamsCodec: const StandardMessageCodec(),
                         onPlatformViewCreated: (id) => plane = MethodChannel(
                           'org.mewx.wenku8/glass_controls/$id',
@@ -390,7 +397,11 @@ void main() {
     state.value = (color: state.value.color, x: -20.0);
     await sample();
     state.value = (color: state.value.color, x: 0.0);
-    await plane!.invokeMethod<void>('state', const {'fromBottom': true});
+    await plane!.invokeMethod<void>('state', const {
+      'sigma': 8.01,
+      'plateau': 60.0,
+      'fromBottom': true,
+    });
     final bottom = await sample();
     final bottomRows = (bottom['bodyRows'] as List)
         .map((row) => List<int>.from(row as List))
@@ -431,7 +442,12 @@ void main() {
               child: IgnorePointer(
                 child: UiKitView(
                   viewType: 'org.mewx.wenku8/glass_controls',
-                  creationParams: const {'kind': 'sharedEdgeProbe'},
+                  creationParams: const {
+                    'kind': 'gaussianEdge',
+                    'sigma': 8.0,
+                    'plateau': 60.0,
+                    'fromBottom': false,
+                  },
                   creationParamsCodec: const StandardMessageCodec(),
                   onPlatformViewCreated: (id) => destination = MethodChannel(
                     'org.mewx.wenku8/glass_controls/$id',

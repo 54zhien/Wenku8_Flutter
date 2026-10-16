@@ -18,12 +18,14 @@ import 'package:wenku8_flutter/ios_glass.dart';
 import 'package:wenku8_flutter/reading_history.dart';
 import '../test/support/cover_fixture.dart';
 import '../test/support/offline_fixture.dart';
+import 'support/native_host.dart';
 
-void main() {
+Future<void> main() async {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   // Let animation tickers request every vsync between test actions. The live
   // binding's default policy otherwise suppresses frames between explicit pumps.
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  await awaitNativeTestHost(binding);
   testWidgets('record the same real book search and settings transitions', (
     tester,
   ) async {
@@ -65,6 +67,25 @@ void main() {
     final hz = tester.view.display.refreshRate;
     final budget = 1000000 / hz;
     final reports = <String, Object?>{};
+    Map<String, Object?> reportSnapshot() => {
+      'label': const String.fromEnvironment('BENCHMARK_LABEL'),
+      'mode': kProfileMode
+          ? 'profile'
+          : kReleaseMode
+          ? 'release'
+          : 'debug',
+      'os': Platform.operatingSystem,
+      'physical_size': [
+        tester.view.physicalSize.width,
+        tester.view.physicalSize.height,
+      ],
+      'scope':
+          'controlled fixture through actual app widgets; engine build/raster timing, not presented FPS; iOS simulator is debug-only',
+      'scenes': reports,
+    };
+    final file = File(
+      '${Directory.systemTemp.path}/wenku-motion-benchmark.json',
+    );
     Future<void> record(String name, Future<void> Function() action) async {
       final frames = <ui.FrameTiming>[];
       void collect(List<ui.FrameTiming> values) => frames.addAll(values);
@@ -133,6 +154,9 @@ void main() {
             },
         ],
       };
+      // Preserve completed scenes even when a later assertion fails. The
+      // native result channel and exact three-scene gate still fail the run.
+      await file.writeAsString(jsonEncode(reportSnapshot()), flush: true);
     }
 
     await record('book_open_and_return_warm', () async {
@@ -217,29 +241,12 @@ void main() {
         expect(tester.getTopLeft(page).dx, closeTo(0, .001));
         Navigator.of(tester.element(page)).pop();
         await tester.pumpAndSettle();
+        await route.completed;
         expect(page, findsNothing);
         expect(find.byType(SettingsPage), findsOneWidget);
       }
     });
-    final report = {
-      'label': const String.fromEnvironment('BENCHMARK_LABEL'),
-      'mode': kProfileMode
-          ? 'profile'
-          : kReleaseMode
-          ? 'release'
-          : 'debug',
-      'os': Platform.operatingSystem,
-      'physical_size': [
-        tester.view.physicalSize.width,
-        tester.view.physicalSize.height,
-      ],
-      'scope':
-          'controlled fixture through actual app widgets; engine build/raster timing, not presented FPS; iOS simulator is debug-only',
-      'scenes': reports,
-    };
-    final file = File(
-      '${Directory.systemTemp.path}/wenku-motion-benchmark.json',
-    );
+    final report = reportSnapshot();
     await file.writeAsString(jsonEncode(report), flush: true);
     // flutter test uninstalls the integration app on exit. Export through the
     // VM-service stdout stream before its sandbox is removed.

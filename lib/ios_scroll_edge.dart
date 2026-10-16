@@ -7,10 +7,10 @@ import 'package:flutter/widgets.dart';
 
 import 'easy_glass.dart';
 import 'ios_glass.dart';
+import 'ios_gaussian_plane.dart';
 
-/// The original single Gaussian and continuous alpha feather. This restores
-/// Flutter's renderer; live UIKit underlap still needs a shared native edge or
-/// engine support for the mask, not image proxies that break real touches.
+/// One untinted Gaussian with the upstream continuous alpha feather. Native
+/// iOS uses a full edge plane, preserving content across control boundaries.
 class IOSScrollEdge extends StatelessWidget {
   const IOSScrollEdge({
     super.key,
@@ -18,12 +18,38 @@ class IOSScrollEdge extends StatelessWidget {
     required this.plateau,
     required this.fromBottom,
     required this.child,
-  });
+  }) : _legacy = false;
+
+  /// Retains the previous per-control transfer for regression diagnostics.
+  const IOSScrollEdge.legacy({
+    super.key,
+    required this.blur,
+    required this.plateau,
+    required this.fromBottom,
+    required this.child,
+  }) : _legacy = true;
+  final bool _legacy;
   final double blur, plateau;
   final bool fromBottom;
   final Widget child;
   @override
   Widget build(BuildContext context) {
+    if (blur <= 0) return child;
+    if (!_legacy && sharedIOSGaussianEnabled && blur > 0) {
+      return Stack(
+        fit: StackFit.passthrough,
+        children: [
+          Positioned.fill(
+            child: IOSGaussianPlane(
+              blur: blur,
+              plateau: plateau,
+              fromBottom: fromBottom,
+            ),
+          ),
+          child,
+        ],
+      );
+    }
     final edge = EasyScrollEdge(
       blur: blur,
       plateau: plateau,

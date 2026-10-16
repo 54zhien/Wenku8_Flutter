@@ -39,7 +39,7 @@ void main() {
               height: height,
               child: Transform.translate(
                 offset: Offset(x, 0),
-                child: IOSScrollEdge(
+                child: IOSScrollEdge.legacy(
                   blur: 8,
                   plateau: plateau,
                   fromBottom: false,

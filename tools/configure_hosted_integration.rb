@@ -3,6 +3,8 @@
 require 'xcodeproj'
 
 mode = ARGV.fetch(0)
+run_id = ARGV.fetch(1)
+abort 'Invalid hosted test run id' unless run_id.match?(/\A[A-Za-z0-9_-]+\z/)
 counts = { 'capture' => 3, 'motion' => 1 }
 abort 'Expected capture or motion' unless counts.key?(mode)
 names = {
@@ -21,6 +23,8 @@ source = <<~OBJC
   @end
   @implementation WenkuHostedIntegrationTests
   - (void)testDartIntegration {
+    NSString *readyPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wenku-host-#{run_id}"];
+    XCTAssertTrue([[NSData data] writeToFile:readyPath atomically:YES], @"Cannot signal the native test-host readiness");
     IntegrationTestPlugin *plugin = [IntegrationTestPlugin instance];
     NSPredicate *predicate = [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
       return plugin.testResults != nil;

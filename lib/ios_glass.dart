@@ -14,6 +14,11 @@ bool get nativeIOSGlassEnabled =>
     defaultTargetPlatform == TargetPlatform.iOS &&
     const bool.fromEnvironment('WENKU8_NATIVE_GLASS');
 
+/// Keep the previous composition path available for explicit diagnostics.
+bool get sharedIOSGaussianEnabled =>
+    nativeIOSGlassEnabled &&
+    const bool.fromEnvironment('WENKU8_SHARED_GAUSSIAN', defaultValue: true);
+
 bool nativeIOSControlsReady(BuildContext context) =>
     nativeIOSGlassEnabled && IOSRouteEntrance.readyOf(context);
 
@@ -94,9 +99,10 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   }
 
   void _queueCapture() {
-    if (!const bool.fromEnvironment(
+    if (sharedIOSGaussianEnabled ||
+        !const bool.fromEnvironment(
           'WENKU8_ROUTE_TEXTURE',
-          defaultValue: true,
+          defaultValue: false,
         ) ||
         !mounted ||
         // A window crop includes Flutter labels painted above a passive

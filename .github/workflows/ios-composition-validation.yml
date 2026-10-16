@@ -27,9 +27,11 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-pub
       - name: Check native-control composition contracts
-        run: flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true test/ios_composition_boundary_test.dart test/ios_scroll_edge_test.dart test/ios_edge_bridge_test.dart test/ios_route_motion_test.dart
-      - name: Compile simulator application without packaging
-        run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
+        run: |
+          flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true --dart-define=WENKU8_SHARED_GAUSSIAN=false --dart-define=WENKU8_ROUTE_TEXTURE=true test/ios_composition_boundary_test.dart test/ios_scroll_edge_test.dart test/ios_edge_bridge_test.dart test/ios_route_motion_test.dart
+          flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true --dart-define=WENKU8_SHARED_GAUSSIAN=true --dart-define=WENKU8_ROUTE_TEXTURE=true test/ios_shared_gaussian_test.dart
+      - name: Configure simulator application for the native test build
+        run: flutter build ios --simulator --debug --config-only --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
       - name: Select additional iOS 26.2 hosted unit-test target
         run: |
           set -euo pipefail
@@ -51,7 +53,16 @@ jobs:
         id: native_tests
         run: |
           set -euo pipefail
-          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests -resultBundlePath build/composition/native-capture.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/composition/native-capture.log
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests -resultBundlePath build/composition/native-capture.xcresult CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/composition/native-capture.log
+      - name: Preserve native phase evidence immediately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-composition-native-${{ github.sha }}
+          path: |
+            build/composition/native-capture.log
+            build/composition/native-capture.xcresult
+          if-no-files-found: ignore
       - name: Execute the actual Flutter pixel assertions through XCTest
         id: pixel_probe
         # Preserve native failures while collecting independent graphics evidence.
@@ -59,15 +70,26 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
-          ruby tools/configure_hosted_integration.rb capture
-          flutter build ios --simulator --debug --no-codesign -t integration_test/ios_native_capture_test.dart --dart-define=WENKU8_NATIVE_GLASS=true --dart-define=INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE=true
-          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests/WenkuHostedIntegrationTests -resultBundlePath build/composition/flutter-pixels.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/composition/flutter-native-capture.log
+          run_id="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-capture"
+          ruby tools/configure_hosted_integration.rb capture "$run_id"
+          flutter build ios --simulator --debug --config-only --no-codesign -t integration_test/ios_native_capture_test.dart --dart-define=WENKU8_NATIVE_GLASS=true --dart-define="WENKU_TEST_RUN_ID=$run_id" --dart-define=INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE=true
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests/WenkuHostedIntegrationTests -resultBundlePath build/composition/flutter-pixels.xcresult CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/composition/flutter-native-capture.log
       - name: Preserve native-hosted pixel evidence
         if: always()
         run: |
           if [ -d build/composition/flutter-pixels.xcresult ]; then
             xcrun xcresulttool export attachments --path build/composition/flutter-pixels.xcresult --output-path build/composition/pixel-attachments
           fi
+      - name: Preserve pixel phase evidence before timing runs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-composition-pixels-${{ github.sha }}
+          path: |
+            build/composition/flutter-native-capture.log
+            build/composition/flutter-pixels.xcresult
+            build/composition/pixel-attachments
+          if-no-files-found: ignore
       - name: Measure the delivered and candidate composition paths on the same simulator
         if: ${{ !cancelled() && steps.pixel_probe.outcome != 'skipped' }}
         timeout-minutes: 20
@@ -79,15 +101,19 @@ jobs:
           git worktree add --detach "$baseline_root" FETCH_HEAD
           cp integration_test/ios_motion_benchmark_test.dart "$baseline_root/integration_test/ios_motion_benchmark_test.dart"
           cmp integration_test/ios_motion_benchmark_test.dart "$baseline_root/integration_test/ios_motion_benchmark_test.dart"
+          mkdir -p "$baseline_root/integration_test/support"
+          cp integration_test/support/native_host.dart "$baseline_root/integration_test/support/native_host.dart"
+          cmp integration_test/support/native_host.dart "$baseline_root/integration_test/support/native_host.dart"
           for variant in before edge_only after; do
             if [ "$variant" = before ]; then cd "$baseline_root"; else cd "$candidate_root"; fi
-            ruby "$candidate_root/tools/configure_hosted_integration.rb" motion
+            run_id="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$variant"
+            ruby "$candidate_root/tools/configure_hosted_integration.rb" motion "$run_id"
             flutter pub get
-            route_texture=true
-            if [ "$variant" = edge_only ]; then route_texture=false; fi
-            flutter build ios --simulator --debug --no-codesign -t integration_test/ios_motion_benchmark_test.dart --dart-define=WENKU8_NATIVE_GLASS=true --dart-define="WENKU8_ROUTE_TEXTURE=$route_texture" --dart-define="BENCHMARK_LABEL=$variant" --dart-define=INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE=true
+            shared_gaussian=false
+            if [ "$variant" = after ]; then shared_gaussian=true; fi
+            flutter build ios --simulator --debug --config-only --no-codesign -t integration_test/ios_motion_benchmark_test.dart --dart-define=WENKU8_NATIVE_GLASS=true --dart-define="WENKU8_SHARED_GAUSSIAN=$shared_gaussian" --dart-define=WENKU8_ROUTE_TEXTURE=false --dart-define="BENCHMARK_LABEL=$variant" --dart-define="WENKU_TEST_RUN_ID=$run_id" --dart-define=INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE=true
             result="$candidate_root/build/composition/$variant.xcresult"
-            xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests/WenkuHostedIntegrationTests -resultBundlePath "$result" CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$candidate_root/build/composition/$variant.log"
+            xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests/WenkuHostedIntegrationTests -resultBundlePath "$result" CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES 2>&1 | tee "$candidate_root/build/composition/$variant.log"
             xcrun xcresulttool export attachments --path "$result" --output-path "$candidate_root/build/composition/$variant-attachments"
           done
           cd "$candidate_root"
@@ -116,6 +142,9 @@ jobs:
               assert original['refresh_hz'] == revised['refresh_hz']
               assert revised['native_counts_available'] is True
               assert isinstance(revised['native_work_counts'], dict)
+              assert revised['native_work_counts'].get('window_snapshots', 0) == 0
+              assert revised['native_work_counts'].get('edge_profiles_registered', 0) == 0
+              assert revised['native_work_counts']['legacy_edge_active'] == 0
               edge_only = reports['edge_only']['scenes'][name]
               assert original['refresh_hz'] == edge_only['refresh_hz']
               comparison['scenes'][name] = {variant: {key: value for key, value in data.items() if key != 'frames'} for variant, data in [('before', original), ('edge_only', edge_only), ('after', revised)]}

@@ -47,7 +47,9 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
   private weak var registrar: FlutterPluginRegistrar?
   private var menuButton: WenkuMenuButton?
   private var menuResult: FlutterResult?
-  private let edgeBridge = WenkuGaussianEdgeBridge()
+  private lazy var edgeBridge = WenkuGaussianEdgeBridge()
+  private let edgeCandidates = NSHashTable<UIView>.weakObjects()
+  private var legacyEdgeActive = false
   init(messenger: FlutterBinaryMessenger, textures: FlutterTextureRegistry) {
     self.messenger = messenger; self.textures = textures
   }
@@ -61,7 +63,9 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     if call.method == "edgeSet", let edge = call.arguments as? [String: Any] {
       WenkuGlassWork.add("edge_profiles_registered")
+      legacyEdgeActive = true
       edgeBridge.flutterView = registrar?.viewController?.view
+      for view in edgeCandidates.allObjects { edgeBridge.trackView(view) }
       result(edgeBridge.setEdge(edge)); return
     }
     if call.method == "edgeRemove", let args = call.arguments as? [String: Any],
@@ -77,7 +81,10 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
       WenkuGlassWork.counts = [:]; WenkuGlassWork.recording = true; result(nil); return
     }
     if call.method == "probeEnd" {
-      WenkuGlassWork.recording = false; result(WenkuGlassWork.counts); return
+      WenkuGlassWork.recording = false
+      var counts = WenkuGlassWork.counts
+      counts["legacy_edge_active"] = legacyEdgeActive ? 1 : 0
+      result(counts); return
     }
     if call.method == "layout" {
       let environment: [String: Any] = ["isPad": UIDevice.current.userInterfaceIdiom == .pad,
@@ -122,15 +129,19 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
   }
   func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
+    if (args as? [String: Any])?["kind"] as? String == "gaussianEdge" {
+      return WenkuGaussianPlaneView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:],
+        messenger: messenger, flutterView: { [weak self] in self?.registrar?.viewController?.view })
+    }
+    let control = WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger, textures: textures)
+    edgeCandidates.add(control.view())
+    if legacyEdgeActive { edgeBridge.trackView(control.view()) }
 #if DEBUG
-    if (args as? [String: Any])?["kind"] as? String == "sharedEdgeProbe" {
-      return WenkuSharedGaussianProbeView(frame: frame, id: viewId,
-        messenger: messenger, flutterView: registrar?.viewController?.view)
+    if (args as? [String: Any])?["kind"] as? String == "edgeProbe" {
+      edgeBridge.flutterView = registrar?.viewController?.view
+      edgeBridge.trackView(control.view())
     }
 #endif
-    let control = WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger, textures: textures)
-    edgeBridge.flutterView = registrar?.viewController?.view
-    edgeBridge.trackView(control.view())
     return control
   }
 }
@@ -150,9 +161,7 @@ private final class WenkuGlassRoot: UIView {
   private var captureBounds = CGRect.null
   var layout: (() -> Void)?
   var attached: (() -> Void)?
-#if DEBUG
-  var probeDetached: (() -> Void)?
-#endif
+  var detached: (() -> Void)?
   override func layoutSubviews() {
     super.layoutSubviews()
     if captureBounds != bounds { captureBounds = bounds; WenkuWindowCapture.invalidate() }
@@ -161,9 +170,7 @@ private final class WenkuGlassRoot: UIView {
   override func didMoveToWindow() {
     super.didMoveToWindow(); WenkuWindowCapture.invalidate(); setNeedsLayout()
     if window != nil { attached?() }
-#if DEBUG
-    if window == nil { probeDetached?() }
-#endif
+    if window == nil { detached?() }
   }
 }
 
@@ -358,37 +365,51 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
 #endif
 }
 
-#if DEBUG
-/// Isolated full-width Gaussian experiment. Not selected by application widgets.
-/// Tests verify Metal/native painter order and the REAL wrapper hit path before
-/// considering this plane for production. No ancestor-mask hook is installed.
-private final class WenkuSharedGaussianProbeView: NSObject, FlutterPlatformView {
+/// One Gaussian across the complete pinned edge, including Flutter content and
+/// native controls. No per-control backdrop-filter or ancestor-mask hook.
+private final class WenkuGaussianPlaneView: NSObject, FlutterPlatformView {
   private let root: WenkuGlassRoot
   private let channel: FlutterMethodChannel
-  private weak var flutterView: UIView?
+  private let resolveFlutterView: () -> UIView?
   private var surface: UIVisualEffectView?
   private var lastSize = CGSize.zero
   private var bottom = false
+  private var sigma: CGFloat = 8
+  private var plateau: CGFloat = 60
+  private var renderedSigma: CGFloat = 0
+  private var renderedPlateau: CGFloat = 0
+  private var attemptedConfiguration = false
   private var renderedBottom = false
   private var safeAncestors = false
 
-  init(frame: CGRect, id: Int64, messenger: FlutterBinaryMessenger, flutterView: UIView?) {
+  init(frame: CGRect, id: Int64, args: [String: Any], messenger: FlutterBinaryMessenger, flutterView: @escaping () -> UIView?) {
     root = WenkuGlassRoot(frame: frame)
     channel = FlutterMethodChannel(name: "org.mewx.wenku8/glass_controls/\(id)", binaryMessenger: messenger)
-    self.flutterView = flutterView
+    self.resolveFlutterView = flutterView
+    let initialSigma = (args["sigma"] as? NSNumber)?.doubleValue ?? 8
+    let initialPlateau = (args["plateau"] as? NSNumber)?.doubleValue ?? 60
+    if initialSigma.isFinite, initialSigma > 0 { sigma = initialSigma }
+    if initialPlateau.isFinite { plateau = initialPlateau }
+    bottom = args["fromBottom"] as? Bool == true
     super.init()
     root.backgroundColor = .clear; root.isUserInteractionEnabled = false
+    root.accessibilityElementsHidden = true
     root.layout = { [weak self] in self?.refresh() }
     root.attached = { [weak self] in self?.refresh() }
-    root.probeDetached = { [weak self] in
-      self?.surface?.removeFromSuperview(); self?.surface = nil; self?.lastSize = .zero
-    }
+    root.detached = { [weak self] in self?.clearSurface() }
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self else { result(nil); return }
       if call.method == "state", let state = call.arguments as? [String: Any] {
+        let sigma = (state["sigma"] as? NSNumber)?.doubleValue ?? Double(self.sigma)
+        let plateau = (state["plateau"] as? NSNumber)?.doubleValue ?? Double(self.plateau)
+        guard sigma.isFinite, sigma > 0, plateau.isFinite else {
+          result(FlutterError(code: "GAUSSIAN_CONFIG", message: "Invalid Gaussian edge configuration", details: nil)); return
+        }
+        self.sigma = sigma; self.plateau = plateau
         self.bottom = state["fromBottom"] as? Bool == true
         self.refresh(); result(nil); return
       }
+#if DEBUG
       if call.method == "ancestors" {
         self.refresh(); result(["safeAncestors": self.safeAncestors]); return
       }
@@ -409,21 +430,30 @@ private final class WenkuSharedGaussianProbeView: NSObject, FlutterPlatformView 
         result(FlutterError(code: "PROBE_PIXELS", message: "Fixed Gaussian probe pixels unavailable", details: nil)); return
       }
       result(["safeAncestors": self.safeAncestors,
-        "flutterHitThrough": hit === self.flutterView,
+        "flutterHitThrough": hit === self.resolveFlutterView(),
         "backgroundPixelBGRA": background,
         "metalBlackBGRA": metalBlack,
         "metalWhiteBGRA": metalWhite,
         "foregroundBlackBGRA": black,
         "foregroundWhiteBGRA": white])
+#else
+      result(FlutterMethodNotImplemented)
+#endif
     }
   }
   deinit { channel.setMethodCallHandler(nil) }
   func view() -> UIView { root }
+  private func clearSurface() {
+    surface?.removeFromSuperview(); surface = nil
+    lastSize = .zero; attemptedConfiguration = false
+  }
   private func refresh() {
-    guard root.window != nil, let flutterView, root.bounds.width > 0, root.bounds.height > 0,
+    guard root.window != nil, let flutterView = resolveFlutterView(), root.bounds.width > 0, root.bounds.height > 0,
       let interceptor = root.superview, let clip = interceptor.superview,
       NSStringFromClass(type(of: interceptor)) == "FlutterTouchInterceptingView",
-      NSStringFromClass(type(of: clip)) == "ChildClippingView" else { safeAncestors = false; return }
+      NSStringFromClass(type(of: clip)) == "ChildClippingView" else {
+      safeAncestors = false; clearSurface(); return
+    }
     interceptor.isUserInteractionEnabled = false; clip.isUserInteractionEnabled = false
     var ancestor: UIView? = root
     var reachedFlutter = false
@@ -434,19 +464,21 @@ private final class WenkuSharedGaussianProbeView: NSObject, FlutterPlatformView 
       ancestor = view.superview
     }
     safeAncestors = safeAncestors && reachedFlutter
-    guard safeAncestors else { surface?.removeFromSuperview(); surface = nil; return }
-    if surface != nil, root.bounds.size == lastSize, bottom == renderedBottom { return }
+    guard safeAncestors else { clearSurface(); return }
+    if attemptedConfiguration, root.bounds.size == lastSize, bottom == renderedBottom,
+      sigma == renderedSigma, plateau == renderedPlateau { return }
     surface?.removeFromSuperview()
-    surface = WenkuGaussianProbePlaneEffect(root.bounds, bottom ? 8.01 : 8, 60, bottom)
+    attemptedConfiguration = true
+    surface = WenkuGaussianCreatePlaneEffect(root.bounds, sigma, plateau, bottom)
     if let surface {
       root.addSubview(surface)
       if let mask = surface.mask { surface.mask = nil; surface.mask = mask }
       WenkuGlassWork.add("shared_plane_rebuilt")
     }
     lastSize = root.bounds.size; renderedBottom = bottom
+    renderedSigma = sigma; renderedPlateau = plateau
   }
 }
-#endif
 
 private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureRecognizerDelegate, UITabBarControllerDelegate {
   private let root: WenkuGlassRoot
