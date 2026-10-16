@@ -90,20 +90,20 @@ final class RunnerTests: XCTestCase {
     XCTAssertGreaterThan(partial[partial.count * 19 / 20], 150)
     let effect = try XCTUnwrap(clip.subviews.compactMap { $0 as? UIVisualEffectView }.first)
     let mask = try XCTUnwrap(effect.mask)
-    XCTAssertEqual(mask.frame.minY, -60, accuracy: .001)
-    XCTAssertEqual(mask.frame.height, 180, accuracy: .001)
+    XCTAssertEqual(mask.frame.minY, -60, accuracy: 0.001)
+    XCTAssertEqual(mask.frame.height, 180, accuracy: 0.001)
     let gradient = try XCTUnwrap(mask.layer as? CAGradientLayer)
     let colors = try XCTUnwrap(gradient.colors as? [CGColor])
     XCTAssertEqual(colors.count, 8)
     for i in 0..<8 {
       let x = max(0, min(1, (Double(i) / 7 - 1.0 / 3) / (2.0 / 3)))
-      XCTAssertEqual(colors[i].alpha, 1 - x * x * (3 - 2 * x), accuracy: .00001)
+      XCTAssertEqual(colors[i].alpha, 1 - x * x * (3 - 2 * x), accuracy: 0.00001)
     }
     // Reusing the control at a different position keeps its original mask view.
     clip.frame.origin.y = 90
     XCTAssertTrue(access.apply(clip, sigma: 8))
     XCTAssertTrue(effect.mask === mask)
-    XCTAssertEqual(mask.frame.minY, -70, accuracy: .001)
+    XCTAssertEqual(mask.frame.minY, -70, accuracy: 0.001)
     XCTAssertFalse(access.set(["id": 1, "y": 20, "height": -1, "plateau": 60, "sigma": 8, "fromBottom": false]))
     XCTAssertEqual(access.maskCount, 0, "A rejected revision must remove the stale mask")
     XCTAssertTrue(access.set(["id": 1, "y": 100, "height": 80, "plateau": 20, "sigma": 8, "fromBottom": false]))
