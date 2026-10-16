@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import 'archive_motion.dart';
+import 'paper_depth.dart';
 
 export 'archive_motion.dart';
 
@@ -515,8 +516,14 @@ class PaperCoverRender extends RenderProxyBox {
             Offset.zero & input,
           );
     final plane = debugPlane;
+    final sineProgress = math.sin(pose.progress * math.pi);
     for (var index = 0; index < _rows.length; index++) {
       final v = _rows[index];
+      final depth = PaperDepthRow.sample(
+        pose.progress,
+        v,
+        sineProgress: sineProgress,
+      );
       final corner = math.min(v, 1 - v) / radiusY;
       final inset = corner >= 1
           ? 0.0
@@ -525,14 +532,16 @@ class PaperCoverRender extends RenderProxyBox {
       const columns = 17;
       for (var column = 0; column < columns; column++) {
         final u = inset + (1 - 2 * inset) * column / (columns - 1);
-        final scale = 300 / (300 - pose.depthAt(v, column: u));
+        final scale = 300 / (300 - depth.at(u));
         final base = (index * columns + column) * 2;
-        final projected = plane.point(
-          .5 + (u - .5) * scale,
-          .5 + (v - .5) * scale,
-        );
-        _positions[base] = size.width * projected.dx;
-        _positions[base + 1] = size.height * projected.dy;
+        final x = .5 + (u - .5) * scale;
+        final y = .5 + (v - .5) * scale;
+        _positions[base] =
+            size.width *
+            (plane.origin.dx + plane.horizontal.dx * x + plane.vertical.dx * y);
+        _positions[base + 1] =
+            size.height *
+            (plane.origin.dy + plane.horizontal.dy * x + plane.vertical.dy * y);
         _texture[base] = source.left + source.width * u;
         _texture[base + 1] = source.top + source.height * v;
       }

@@ -11,6 +11,39 @@ bool get nativeIOSGlassEnabled =>
     defaultTargetPlatform == TargetPlatform.iOS &&
     const bool.fromEnvironment('WENKU8_NATIVE_GLASS');
 
+abstract final class IOSPlatformLayout {
+  static bool isPad = false;
+  static Future<void> initialize() async {
+    if (!nativeIOSGlassEnabled) return;
+    final value = await const MethodChannel(
+      'org.mewx.wenku8/glass_presentation',
+    ).invokeMapMethod<String, dynamic>('layout');
+    isPad = value?['isPad'] == true;
+  }
+}
+
+class IOSNavigationInsets extends StatelessWidget {
+  const IOSNavigationInsets({
+    super.key,
+    required this.extent,
+    required this.child,
+  });
+  final double extent;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    if (!nativeIOSGlassEnabled || !IOSPlatformLayout.isPad) return child;
+    final media = MediaQuery.of(context);
+    final extra = (extent - media.viewPadding.top).clamp(0.0, double.infinity);
+    return MediaQuery(
+      data: media.copyWith(
+        padding: media.padding.copyWith(top: media.padding.top + extra),
+      ),
+      child: child,
+    );
+  }
+}
+
 class IOSGlassControl extends StatefulWidget {
   const IOSGlassControl({
     super.key,
@@ -19,6 +52,7 @@ class IOSGlassControl extends StatefulWidget {
     required this.onAction,
     this.width,
     this.height = 46,
+    this.onMetrics,
   });
 
   final String kind;
@@ -26,6 +60,7 @@ class IOSGlassControl extends StatefulWidget {
   final ValueChanged<Map<Object?, Object?>> onAction;
   final double? width;
   final double height;
+  final ValueChanged<Map<Object?, Object?>>? onMetrics;
 
   @override
   State<IOSGlassControl> createState() => _IOSGlassControlState();
@@ -33,6 +68,8 @@ class IOSGlassControl extends StatefulWidget {
 
 class _IOSGlassControlState extends State<IOSGlassControl> {
   MethodChannel? _channel;
+  double? _measuredHeight;
+  Object? _lastSent;
 
   Map<String, Object?> get _configuration => {
     ...widget.configuration,
@@ -42,6 +79,18 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   };
 
   Future<dynamic> _receive(MethodCall call) async {
+    if (mounted && call.method == 'metrics' && call.arguments is Map) {
+      widget.onMetrics?.call(Map<Object?, Object?>.from(call.arguments as Map));
+      final height = (call.arguments as Map)['height'];
+      if (height is num &&
+          height.isFinite &&
+          height >= 44 &&
+          height <= 180 &&
+          (_measuredHeight == null || (_measuredHeight! - height).abs() > .5)) {
+        setState(() => _measuredHeight = height.toDouble());
+      }
+      return null;
+    }
     if (!mounted ||
         call.method != 'action' ||
         widget.configuration['enabled'] == false ||
@@ -62,18 +111,24 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   void _sync() {
     final channel = _channel;
     if (channel == null) return;
+    final configuration = _configuration;
+    if (_sameNativeValue(configuration, _lastSent)) return;
+    final snapshot = _copyNativeValue(configuration);
+    _lastSent = snapshot;
     unawaited(
-      channel
-          .invokeMethod<void>('state', _configuration)
-          .catchError(
-            (Object error, StackTrace stack) => FlutterError.reportError(
-              FlutterErrorDetails(
-                exception: error,
-                stack: stack,
-                library: 'Wenku8 native glass',
-              ),
-            ),
+      channel.invokeMethod<void>('state', configuration).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        if (identical(_lastSent, snapshot)) _lastSent = null;
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stack,
+            library: 'Wenku8 native glass',
           ),
+        );
+      }),
     );
   }
 
@@ -99,7 +154,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: widget.width,
-    height: widget.height,
+    height: _measuredHeight ?? widget.height,
     child: UiKitView(
       viewType: 'org.mewx.wenku8/glass_controls',
       creationParams: _configuration,
@@ -107,6 +162,221 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
       onPlatformViewCreated: _created,
     ),
   );
+}
+
+bool _sameNativeValue(Object? left, Object? right) {
+  if (identical(left, right)) return true;
+  if (left is Map && right is Map) {
+    return left.length == right.length &&
+        left.entries.every(
+          (entry) =>
+              right.containsKey(entry.key) &&
+              _sameNativeValue(entry.value, right[entry.key]),
+        );
+  }
+  if (left is List && right is List) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (!_sameNativeValue(left[index], right[index])) return false;
+    }
+    return true;
+  }
+  return left == right;
+}
+
+Object? _copyNativeValue(Object? value) {
+  if (value is Map) {
+    return value.map((key, value) => MapEntry(key, _copyNativeValue(value)));
+  }
+  if (value is List) return value.map(_copyNativeValue).toList(growable: false);
+  return value;
+}
+
+/// Native material stays behind Flutter labels without filtering their layer.
+class IOSGlassSurface extends StatelessWidget {
+  const IOSGlassSurface({
+    super.key,
+    required this.child,
+    this.radius = 28,
+    this.opaque = false,
+  });
+  final Widget child;
+  final double radius;
+  final bool opaque;
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.passthrough,
+    children: [
+      Positioned.fill(
+        child: IgnorePointer(
+          child: ExcludeSemantics(
+            child: IOSGlassControl(
+              kind: 'surface',
+              height: double.infinity,
+              configuration: {'radius': radius, 'opaque': opaque},
+              onAction: (_) {},
+            ),
+          ),
+        ),
+      ),
+      child,
+    ],
+  );
+}
+
+Widget adaptiveSwitch({
+  Key? key,
+  required bool value,
+  required ValueChanged<bool>? onChanged,
+  Color? activeTrackColor,
+  String label = '开关',
+}) => nativeIOSGlassEnabled
+    ? IOSGlassControl(
+        key: key,
+        kind: 'switch',
+        width: 64,
+        height: 44,
+        configuration: {
+          'label': label,
+          'value': value,
+          'enabled': onChanged != null,
+        },
+        onAction: (event) {
+          if (event['value'] case final bool value) onChanged?.call(value);
+        },
+      )
+    : CupertinoSwitch(
+        key: key,
+        value: value,
+        activeTrackColor: activeTrackColor,
+        onChanged: onChanged,
+      );
+
+class AdaptiveSegmentedControl<T extends Object> extends StatelessWidget {
+  const AdaptiveSegmentedControl({
+    super.key,
+    required this.children,
+    required this.groupValue,
+    required this.onValueChanged,
+  });
+  final Map<T, Widget> children;
+  final T? groupValue;
+  final ValueChanged<T?> onValueChanged;
+  @override
+  Widget build(BuildContext context) =>
+      nativeIOSGlassEnabled && children.values.every((value) => value is Text)
+      ? IOSGlassControl(
+          kind: 'segmented',
+          height: 44,
+          configuration: {
+            'selectedIndex': groupValue == null
+                ? -1
+                : children.keys.toList().indexOf(groupValue as T),
+            'items': [
+              for (final child in children.values)
+                {'label': (child as Text).data ?? ''},
+            ],
+          },
+          onAction: (event) {
+            if (event['index'] case final int index) {
+              if (index >= 0 && index < children.length) {
+                onValueChanged(children.keys.elementAt(index));
+              }
+            }
+          },
+        )
+      : CupertinoSlidingSegmentedControl<T>(
+          children: children,
+          groupValue: groupValue,
+          onValueChanged: onValueChanged,
+        );
+}
+
+class IOSMenuOption<T> {
+  const IOSMenuOption(
+    this.value,
+    this.label, {
+    this.selected = false,
+    this.destructive = false,
+  });
+  final T value;
+  final String label;
+  final bool selected;
+  final bool destructive;
+}
+
+class IOSSelectionButton<T> extends StatelessWidget {
+  const IOSSelectionButton({
+    super.key,
+    required this.label,
+    required this.semanticLabel,
+    required this.options,
+    required this.onSelected,
+  });
+  final String label;
+  final String semanticLabel;
+  final List<IOSMenuOption<T>> options;
+  final ValueChanged<T> onSelected;
+  @override
+  Widget build(BuildContext context) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: const TextStyle(fontSize: 14)),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final width = painter.width + 56;
+    painter.dispose();
+    return IOSGlassControl(
+      kind: 'selection',
+      width: width,
+      height: 44,
+      configuration: {
+        'label': label,
+        'semanticLabel': semanticLabel,
+        'symbol': 'chevron.down',
+        'showLabel': true,
+        'menu': [
+          for (final option in options)
+            {'label': option.label, 'selected': option.selected},
+        ],
+      },
+      onAction: (event) {
+        if (event['index'] case final int index) {
+          if (index >= 0 && index < options.length) {
+            onSelected(options[index].value);
+          }
+        }
+      },
+    );
+  }
+}
+
+Future<T?> showIOSMenu<T>(
+  BuildContext context,
+  List<IOSMenuOption<T>> options,
+) async {
+  final box = context.findRenderObject() as RenderBox;
+  final origin = box.localToGlobal(Offset.zero);
+  final index = await const MethodChannel('org.mewx.wenku8/glass_presentation')
+      .invokeMethod<int>('menu', {
+        'anchor': {
+          'x': origin.dx,
+          'y': origin.dy,
+          'width': box.size.width,
+          'height': box.size.height,
+        },
+        'items': [
+          for (final option in options)
+            {
+              'label': option.label,
+              'selected': option.selected,
+              'destructive': option.destructive,
+            },
+        ],
+      });
+  return index != null && index >= 0 && index < options.length
+      ? options[index].value
+      : null;
 }
 
 String? iosSystemSymbol(IconData icon) {
@@ -124,6 +394,8 @@ String? iosSystemSymbol(IconData icon) {
     CupertinoIcons.trash.codePoint: 'trash',
     CupertinoIcons.arrow_down.codePoint: 'arrow.down',
     CupertinoIcons.arrow_up.codePoint: 'arrow.up',
+    CupertinoIcons.arrow_left.codePoint: 'chevron.backward',
+    CupertinoIcons.arrow_right.codePoint: 'chevron.forward',
     CupertinoIcons.play.codePoint: 'play',
     CupertinoIcons.pause.codePoint: 'pause',
     CupertinoIcons.list_bullet.codePoint: 'list.bullet',

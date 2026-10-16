@@ -20,7 +20,7 @@ import UIKit
       WenkuLocalTools.register(with: registrar)
     }
     if let registrar = registry.registrar(forPlugin: "WenkuGlassControls") {
-      registrar.register(WenkuGlassFactory(messenger: registrar.messenger()), withId: "org.mewx.wenku8/glass_controls")
+      WenkuGlassFactory.register(with: registrar)
     }
   }
 }

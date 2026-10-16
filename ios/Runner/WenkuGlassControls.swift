@@ -1,28 +1,113 @@
 import Flutter
 import UIKit
 
+/// Explicitly enabled by the benchmark only; contains counts, never content.
+private enum WenkuGlassWork {
+  static var recording = false
+  static var counts: [String: Int] = [:]
+  static func add(_ event: String) {
+    if recording { counts[event, default: 0] += 1 }
+  }
+}
+
 /// Native-only prototype. Flutter owns state/routes; this view owns controls.
-final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory {
+final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlugin {
   private let messenger: FlutterBinaryMessenger
+  private weak var registrar: FlutterPluginRegistrar?
+  private var menuButton: WenkuMenuButton?
+  private var menuResult: FlutterResult?
   init(messenger: FlutterBinaryMessenger) { self.messenger = messenger }
+  static func register(with registrar: FlutterPluginRegistrar) {
+    let factory = WenkuGlassFactory(messenger: registrar.messenger())
+    factory.registrar = registrar
+    registrar.register(factory, withId: "org.mewx.wenku8/glass_controls")
+    let channel = FlutterMethodChannel(name: "org.mewx.wenku8/glass_presentation", binaryMessenger: registrar.messenger())
+    registrar.addMethodCallDelegate(factory, channel: channel)
+  }
+  func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "probeStart" {
+      WenkuGlassWork.counts = [:]; WenkuGlassWork.recording = true; result(nil); return
+    }
+    if call.method == "probeEnd" {
+      WenkuGlassWork.recording = false; result(WenkuGlassWork.counts); return
+    }
+    if call.method == "layout" {
+      result(["isPad": UIDevice.current.userInterfaceIdiom == .pad]); return
+    }
+    guard call.method == "menu", let args = call.arguments as? [String: Any],
+      let items = args["items"] as? [[String: Any]], !items.isEmpty else {
+      result(FlutterMethodNotImplemented); return
+    }
+    guard menuResult == nil, var presenter = registrar?.viewController else {
+      result(FlutterError(code: "PRESENTATION_BUSY", message: "菜单暂时无法打开", details: nil)); return
+    }
+    while let next = presenter.presentedViewController { presenter = next }
+    let button = WenkuMenuButton(type: .system)
+    let anchor = args["anchor"] as? [String: NSNumber] ?? [:]
+    let windowRect = CGRect(x: anchor["x"]?.doubleValue ?? 0, y: anchor["y"]?.doubleValue ?? 0,
+      width: max(1, anchor["width"]?.doubleValue ?? 44), height: max(1, anchor["height"]?.doubleValue ?? 44))
+    button.frame = presenter.view.convert(windowRect, from: presenter.view.window)
+    button.menu = UIMenu(children: items.enumerated().map { index, item in
+      UIAction(title: item["label"] as? String ?? "", attributes:
+        item["destructive"] as? Bool == true ? .destructive : [], state:
+        item["selected"] as? Bool == true ? .on : .off) { [weak button] _ in button?.selection = index }
+    })
+    button.showsMenuAsPrimaryAction = true
+    button.dismissed = { [weak self] in
+      guard let self else { return }
+      let selection = self.menuButton?.selection
+      self.menuButton?.removeFromSuperview()
+      self.menuButton = nil
+      let callback = self.menuResult
+      self.menuResult = nil
+      callback?(selection)
+    }
+    menuButton = button
+    menuResult = result
+    presenter.view.addSubview(button)
+    button.performPrimaryAction()
+  }
   func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
     WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger)
   }
 }
 
-private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureRecognizerDelegate {
-  private let root: UIView
+private final class WenkuMenuButton: UIButton {
+  var selection: Int?
+  var dismissed: (() -> Void)?
+  override func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+    willEndFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
+    super.contextMenuInteraction(interaction, willEndFor: configuration, animator: animator)
+    if let animator { animator.addCompletion { [weak self] in self?.dismissed?() } }
+    else { dismissed?() }
+  }
+}
+
+private final class WenkuGlassRoot: UIView {
+  var layout: (() -> Void)?
+  override func layoutSubviews() { super.layoutSubviews(); layout?() }
+  override func didMoveToWindow() { super.didMoveToWindow(); setNeedsLayout() }
+}
+
+private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureRecognizerDelegate, UITabBarControllerDelegate {
+  private let root: WenkuGlassRoot
   private let channel: FlutterMethodChannel
   private var state: [String: Any]
   private var buttons: [UIButton] = []
   private var slider: UISlider?
   private var toggle: UISwitch?
   private var previewIndex: Int?
+  private var tabs: UITabBarController?
+  private var toolbar: UIToolbar?
+  private var segmented: UISegmentedControl?
+  private var lastHeight: CGFloat = 0
+  private var surface: UIVisualEffectView?
 
   init(frame: CGRect, id: Int64, args: [String: Any], messenger: FlutterBinaryMessenger) {
+    WenkuGlassWork.add("platform_views_created")
     state = args
-    root = UIView(frame: frame)
+    root = WenkuGlassRoot(frame: frame)
     channel = FlutterMethodChannel(name: "org.mewx.wenku8/glass_controls/\(id)", binaryMessenger: messenger)
     super.init()
     root.backgroundColor = .clear
@@ -35,7 +120,13 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
     }
   }
 
-  deinit { channel.setMethodCallHandler(nil) }
+  deinit {
+    channel.setMethodCallHandler(nil)
+    root.layout = nil
+    tabs?.willMove(toParent: nil)
+    tabs?.view.removeFromSuperview()
+    tabs?.removeFromParent()
+  }
   func view() -> UIView { root }
 
   private func pin(_ child: UIView, to parent: UIView, inset: CGFloat = 0) {
@@ -51,6 +142,80 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
 
   private func createControls() {
     switch state["kind"] as? String {
+    case "surface":
+      root.isUserInteractionEnabled = false
+      let opaque = state["opaque"] as? Bool == true
+      let glass = UIVisualEffectView(effect: opaque ? nil : UIGlassEffect(style: .regular))
+      if !opaque { WenkuGlassWork.add("surface_effects_created") }
+      glass.backgroundColor = opaque ? .systemBackground : .clear
+      surface = glass
+      glass.layer.cornerRadius = (state["radius"] as? NSNumber)?.doubleValue ?? 28
+      glass.clipsToBounds = true
+      pin(glass, to: root)
+    case "tabbar":
+      let controller = UITabBarController()
+      controller.delegate = self
+      controller.view.backgroundColor = .clear
+      let items = state["items"] as? [[String: Any]] ?? []
+      controller.viewControllers = items.enumerated().map { index, item in
+        let page = UIViewController()
+        page.view.backgroundColor = .clear
+        let name = item["symbol"] as? String ?? ""
+        page.tabBarItem = UITabBarItem(title: item["label"] as? String,
+          image: UIImage(systemName: name + ".fill") ?? UIImage(systemName: name), tag: index)
+        page.tabBarItem.accessibilityIdentifier = "wenku-tab-\(index)"
+        return page
+      }
+      tabs = controller
+      root.layout = { [weak self] in
+        guard let self else { return }
+        if controller.parent == nil, self.root.window != nil {
+          var responder: UIResponder? = self.root.superview
+          while let value = responder {
+            if let parent = value as? UIViewController {
+              parent.addChild(controller)
+              self.pin(controller.view, to: self.root)
+              controller.didMove(toParent: parent)
+              break
+            }
+            responder = value.next
+          }
+        }
+        guard controller.parent != nil else { return }
+        controller.view.frame = self.root.bounds
+        controller.view.layoutIfNeeded()
+        let height = controller.traitCollection.userInterfaceIdiom == .pad
+          ? max(controller.tabBar.frame.maxY, controller.selectedViewController?.view.safeAreaInsets.top ?? 0)
+          : controller.tabBar.frame.height
+        self.reportHeight(height)
+      }
+    case "toolbar":
+      let bar = UIToolbar()
+      toolbar = bar
+      root.addSubview(bar)
+      let items = state["items"] as? [[String: Any]] ?? []
+      var barItems: [UIBarButtonItem] = []
+      for (index, item) in items.enumerated() {
+        if index > 0 { barItems.append(UIBarButtonItem(systemItem: .flexibleSpace)) }
+        let action = UIBarButtonItem(title: item["label"] as? String, image:
+          index == 1 ? nil : (item["symbol"] as? String).flatMap { UIImage(systemName: $0) },
+          primaryAction: UIAction { [weak self] _ in self?.channel.invokeMethod("action", arguments: ["index": index]) })
+        action.accessibilityLabel = item["semanticLabel"] as? String ?? item["label"] as? String
+        action.accessibilityIdentifier = "wenku-reader-action-\(index)"
+        barItems.append(action)
+      }
+      bar.items = barItems
+      root.layout = { [weak self] in
+        guard let self else { return }
+        let height = bar.sizeThatFits(self.root.bounds.size).height
+        bar.frame = CGRect(x: 0, y: 0, width: self.root.bounds.width, height: height)
+        self.reportHeight(height + self.root.safeAreaInsets.bottom)
+      }
+    case "segmented":
+      let control = UISegmentedControl(items: (state["items"] as? [[String: Any]] ?? []).map { $0["label"] as? String ?? "" })
+      segmented = control
+      pin(control, to: root, inset: 4)
+      control.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
     case "dock":
       let effect = UIGlassEffect(style: .regular)
       effect.isInteractive = true
@@ -90,16 +255,46 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
       toggle = control
     default:
       let button = UIButton(type: .system)
-      button.addTarget(self, action: #selector(tap(_:)), for: .touchUpInside)
+      if state["kind"] as? String != "selection" {
+        button.addTarget(self, action: #selector(tap(_:)), for: .touchUpInside)
+      }
       buttons = [button]
       pin(button, to: root)
     }
   }
 
   private func update(_ args: [String: Any]) {
+    WenkuGlassWork.add("state_updates")
+    let previousOpaque = state["opaque"] as? Bool == true
     state = args
-    root.overrideUserInterfaceStyle = args["dark"] as? Bool == true ? .dark : .light
+    let style: UIUserInterfaceStyle = args["dark"] as? Bool == true ? .dark : .light
+    if root.overrideUserInterfaceStyle != style { root.overrideUserInterfaceStyle = style }
     let enabled = args["enabled"] as? Bool ?? true
+    if let surface {
+      surface.layer.cornerRadius = (args["radius"] as? NSNumber)?.doubleValue ?? 28
+      let opaque = args["opaque"] as? Bool == true
+      if opaque != previousOpaque {
+        surface.effect = opaque ? nil : UIGlassEffect(style: .regular)
+        if !opaque { WenkuGlassWork.add("surface_effects_created") }
+        surface.backgroundColor = opaque ? .systemBackground : .clear
+      }
+    }
+    if let tabs { tabs.selectedIndex = max(0, min((tabs.viewControllers?.count ?? 1) - 1, args["selectedIndex"] as? Int ?? 0)) }
+    if let toolbar {
+      let items = args["items"] as? [[String: Any]] ?? []
+      for (index, item) in items.enumerated() {
+        let position = index * 2
+        guard let actions = toolbar.items, position < actions.count else { continue }
+        actions[position].title = item["label"] as? String
+        actions[position].isEnabled = enabled && (item["enabled"] as? Bool ?? true)
+        actions[position].accessibilityLabel = item["semanticLabel"] as? String ?? item["label"] as? String
+      }
+    }
+    if let segmented {
+      segmented.selectedSegmentIndex = args["selectedIndex"] as? Int ?? UISegmentedControl.noSegment
+      segmented.isEnabled = enabled
+    }
+    if tabs != nil || toolbar != nil { lastHeight = 0; root.setNeedsLayout() }
     if let slider {
       slider.minimumValue = (args["min"] as? NSNumber)?.floatValue ?? 0
       slider.maximumValue = (args["max"] as? NSNumber)?.floatValue ?? 1
@@ -123,7 +318,7 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
       config.image = (item["symbol"] as? String).flatMap { UIImage(systemName: $0) }
       config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: items == nil ? 20 : 17)
       if items != nil || item["showLabel"] as? Bool == true { config.title = item["label"] as? String }
-      config.imagePlacement = items == nil ? .leading : .top
+      config.imagePlacement = args["kind"] as? String == "selection" ? .trailing : (items == nil ? .leading : .top)
       config.imagePadding = 3
       config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
         var outgoing = incoming
@@ -132,10 +327,35 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
         return outgoing
       }
       button.configuration = config
+      WenkuGlassWork.add("button_configurations")
+      if let menuItems = args["menu"] as? [[String: Any]] {
+        button.menu = UIMenu(children: menuItems.enumerated().map { option, item in
+          UIAction(title: item["label"] as? String ?? "", state:
+            item["selected"] as? Bool == true ? .on : .off) { [weak self] _ in
+              self?.channel.invokeMethod("action", arguments: ["index": option])
+            }
+        })
+        button.showsMenuAsPrimaryAction = true
+        button.changesSelectionAsPrimaryAction = true
+      }
       button.accessibilityLabel = item["semanticLabel"] as? String ?? item["label"] as? String
       button.isEnabled = enabled && (item["enabled"] as? Bool ?? true)
       button.accessibilityTraits = active ? [.button, .selected] : .button
     }
+  }
+
+  private func reportHeight(_ height: CGFloat) {
+    guard height >= 44, height <= 180, abs(height - lastHeight) > 0.5 else { return }
+    lastHeight = height
+    channel.invokeMethod("metrics", arguments: ["height": height])
+  }
+
+  func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+    channel.invokeMethod("action", arguments: ["index": tabBarController.selectedIndex])
+  }
+
+  @objc private func segmentChanged() {
+    if let segmented { channel.invokeMethod("action", arguments: ["index": segmented.selectedSegmentIndex]) }
   }
 
   @objc private func tap(_ sender: UIButton) {

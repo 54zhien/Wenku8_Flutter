@@ -157,8 +157,9 @@ class _LowPerformancePageState extends State<LowPerformancePage> {
       const SizedBox(width: 12),
       Semantics(
         label: title,
-        child: CupertinoSwitch(
+        child: adaptiveSwitch(
           key: ValueKey(switchKey),
+          label: title,
           value: value,
           activeTrackColor: Theme.of(context).colorScheme.primary,
           onChanged: onChanged,

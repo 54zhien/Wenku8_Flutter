@@ -11,6 +11,7 @@ import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 import 'easy_glass.dart';
 import 'glass_sampling_budget.dart';
 import 'performance_preferences.dart';
+import 'ios_glass.dart';
 
 /// Runtime effects execute on Android's Impeller GPU, without frame copies,
 /// platform-view overlays or a CPU bitmap blur.
@@ -27,6 +28,7 @@ abstract final class NativeEffects {
   static Future<void>? _loading;
 
   static Future<void> prepare() {
+    if (nativeIOSGlassEnabled) return Future.value();
     if (!ui.ImageFilter.isShaderFilterSupported) return Future.value();
     return _loading ??= _load();
   }
@@ -228,6 +230,7 @@ class _NativeGlassGroupState extends State<NativeGlassGroup> {
 
   @override
   Widget build(BuildContext context) {
+    if (nativeIOSGlassEnabled) return widget.child;
     if (widget.inherit && _GlassInputScope.maybeOf(context) != null) {
       return widget.child;
     }
@@ -429,6 +432,7 @@ class _NativeBackdropState extends State<NativeBackdrop> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (nativeIOSGlassEnabled) return;
     final preferences = PerformanceScope.of(context);
     final needsRuntime = widget.effect == NativeEffect.progressive
         ? preferences.edgeBlur && widget.blur > 0
@@ -453,6 +457,18 @@ class _NativeBackdropState extends State<NativeBackdrop> {
   Widget build(BuildContext context) {
     if (widget.bypass) return widget.child;
     final preferences = PerformanceScope.of(context);
+    if (nativeIOSGlassEnabled) {
+      return widget.effect == NativeEffect.glass
+          ? IOSGlassSurface(
+              radius: widget.radius,
+              opaque:
+                  widget.thickness <= 0 ||
+                  !preferences.glass ||
+                  !preferences.blur,
+              child: widget.child,
+            )
+          : widget.child;
+    }
     if (widget.effect == NativeEffect.progressive && !preferences.edgeBlur) {
       return widget.child;
     }

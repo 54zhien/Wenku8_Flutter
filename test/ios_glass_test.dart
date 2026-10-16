@@ -1,12 +1,133 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wenku8_flutter/ios_glass.dart';
+import 'package:wenku8_flutter/native_effects.dart';
+import 'package:wenku8_flutter/scroll_edge_blur.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'unchanged controls do not resend native state during parent animation',
+    (tester) async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      var messages = 0;
+      MethodChannel? channel;
+      messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
+        call,
+      ) async {
+        if (call.method == 'create') {
+          channel = MethodChannel(
+            'org.mewx.wenku8/glass_controls/${(call.arguments as Map)['id']}',
+          );
+          messenger.setMockMethodCallHandler(channel!, (call) async {
+            if (call.method == 'state') messages++;
+            return null;
+          });
+        }
+        return null;
+      });
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
+        if (channel != null) messenger.setMockMethodCallHandler(channel!, null);
+      });
+      Future<void> rebuild(String label) async {
+        await tester.pumpWidget(
+          CupertinoApp(
+            home: IOSGlassControl(
+              kind: 'dock',
+              configuration: {
+                'selectedIndex': 0,
+                'items': [
+                  {'label': label, 'enabled': true},
+                ],
+              },
+              onAction: (_) {},
+            ),
+          ),
+        );
+        await tester.pump();
+      }
+
+      await rebuild('发现');
+      final initial = messages;
+      for (var frame = 0; frame < 20; frame++) {
+        await rebuild('发现');
+      }
+      expect(
+        messages,
+        initial,
+        reason:
+            'A stable native control must not allocate new native effects every animation tick.',
+      );
+      await rebuild('书架');
+      expect(messages, initial + 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('system menu selection and cancellation preserve typed results', (
+    tester,
+  ) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('org.mewx.wenku8/glass_presentation');
+    int? response = 1;
+    Map? request;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      request = call.arguments as Map;
+      return response;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    late BuildContext anchor;
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: Builder(
+          builder: (context) {
+            anchor = context;
+            return const SizedBox(width: 46, height: 46);
+          },
+        ),
+      ),
+    );
+    const options = [
+      IOSMenuOption('keep', '保留'),
+      IOSMenuOption('remove', '移除', destructive: true),
+    ];
+    expect(await showIOSMenu(anchor, options), 'remove');
+    expect((request!['items'] as List)[1]['destructive'], true);
+    expect((request!['anchor'] as Map)['width'], greaterThan(0));
+    response = null;
+    expect(await showIOSMenu(anchor, options), isNull);
+    response = 99;
+    expect(await showIOSMenu(anchor, options), isNull);
+  });
+
+  testWidgets('iOS scroll edge cannot filter native control foregrounds', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      const MaterialApp(home: SizedBox(height: 120, child: ProgressiveBlur())),
+    );
+    expect(
+      find.byType(NativeBackdrop),
+      nativeIOSGlassEnabled ? findsNothing : findsOneWidget,
+    );
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    await tester.pumpWidget(
+      const MaterialApp(home: SizedBox(height: 120, child: ProgressiveBlur())),
+    );
+    expect(find.byType(NativeBackdrop), findsOneWidget);
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   test('native audio symbols preserve the meaning of icon-only actions', () {
     expect(iosSystemSymbol(CupertinoIcons.play_fill), 'play.fill');

@@ -221,6 +221,7 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
   Future<void> _remove(BuildContext context, int id) async {
     final remove = await showGlassMenu<bool>(
       context: context,
+      nativeOptions: const [IOSMenuOption(true, '移除这条历史', destructive: true)],
       reduceMotion: widget.state.reduceMotion,
       builder: (menu) => GlassMenuItem(
         label: '移除这条历史',
@@ -246,6 +247,10 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
   Future<void> _clear(BuildContext context) async {
     final clear = await showGlassMenu<bool>(
       context: context,
+      nativeOptions: const [
+        IOSMenuOption(true, '清空历史，保留进度', destructive: true),
+        IOSMenuOption(false, '保留阅读历史'),
+      ],
       reduceMotion: widget.state.reduceMotion,
       builder: (menu) => Column(
         mainAxisSize: MainAxisSize.min,

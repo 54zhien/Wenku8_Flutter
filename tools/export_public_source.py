@@ -12,7 +12,8 @@ FILES = (
     "docs/RELEASING.md", "docs/THIRD_PARTY.md", "CHANGELOG.md", "tools/prepare_release.py", "tools/test_prepare_release.py",
     "tools/check_public_source.py", "tools/test_public_source_policy.py",
     "tools/verify_apk_runtime.py", "tools/test_verify_apk_runtime.py",
-    ".github/workflows/ios.yml", "docs/IOS.md",
+    ".github/workflows/ios.yml", "docs/IOS.md", "docs/IOS_PERFORMANCE.md",
+    "tools/configure_ios_ui_tests.rb",
 )
 DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "native_tests", "android", "ios", "docs/images", "third_party/liquid_glass_easy")
 PRIVATE_NAMES = {

@@ -22,6 +22,8 @@ export 'scroll_edge_blur.dart' show ProgressiveBlur, ScrollEdgeProfile;
 export 'loading_ui.dart';
 export 'motion_ui.dart';
 export 'archive_design.dart';
+export 'ios_glass.dart'
+    show adaptiveSwitch, AdaptiveSegmentedControl, IOSMenuOption;
 
 const ink = Color(0xFF181818);
 const accent = Color(0xFF202020);
@@ -179,7 +181,9 @@ class FrostedHeader extends StatelessWidget {
     this.blurBackground = true,
   });
 
-  static const toolbarHeight = 56.0;
+  static double get toolbarHeight => nativeIOSGlassEnabled
+      ? const CupertinoNavigationBar().preferredSize.height
+      : 56.0;
   static const featherHeight = 56.0;
   final Widget child;
   final bool blurBackground;
@@ -196,6 +200,31 @@ class FrostedHeader extends StatelessWidget {
     );
     final appearance = GlassAppearance.of(context);
     final highContrast = MediaQuery.highContrastOf(context);
+    if (nativeIOSGlassEnabled) {
+      return SizedBox(
+        key: const ValueKey('frosted-navigation-plane'),
+        height: statusHeight + toolbarHeight + featherHeight,
+        child: Stack(
+          children: [
+            if (blurBackground) Positioned.fill(child: ProgressiveBlur()),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: CupertinoNavigationBar(
+                automaticallyImplyLeading: false,
+                automaticallyImplyMiddle: false,
+                transitionBetweenRoutes: false,
+                enableBackgroundFilterBlur: false,
+                backgroundColor: Colors.transparent,
+                border: null,
+                middle: child,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return SizedBox(
       key: const ValueKey('frosted-navigation-plane'),
       height: statusHeight + toolbarHeight + featherHeight,
@@ -667,35 +696,62 @@ class GlassTextButton extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    enabled: onPressed != null,
-    child: LiquidGlass(
-      radius: 22,
-      elevated: false,
-      onTap: onPressed,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 64, minHeight: 48),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Align(
-            widthFactor: 1,
-            heightFactor: 1,
-            child: DefaultTextStyle.merge(
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context).colorScheme.onSurface.withValues(
-                  alpha: onPressed == null ? .45 : 1,
+  Widget build(BuildContext context) {
+    if (nativeIOSGlassEnabled &&
+        child is Text &&
+        (child as Text).data != null) {
+      final label = (child as Text).data!;
+      final painter = TextPainter(
+        text: TextSpan(text: label, style: const TextStyle(fontSize: 14)),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      final width = math.max(64.0, painter.width + 32);
+      painter.dispose();
+      return LayoutBuilder(
+        builder: (context, constraints) => IOSGlassControl(
+          kind: 'button',
+          width: math.min(width, constraints.maxWidth),
+          height: 48,
+          configuration: {
+            'label': label,
+            'showLabel': true,
+            'enabled': onPressed != null,
+          },
+          onAction: (_) => onPressed?.call(),
+        ),
+      );
+    }
+    return Semantics(
+      button: true,
+      enabled: onPressed != null,
+      child: LiquidGlass(
+        radius: 22,
+        elevated: false,
+        onTap: onPressed,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 64, minHeight: 48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Align(
+              widthFactor: 1,
+              heightFactor: 1,
+              child: DefaultTextStyle.merge(
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(
+                    alpha: onPressed == null ? .45 : 1,
+                  ),
                 ),
+                child: child,
               ),
-              child: child,
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 Widget sectionHeader(BuildContext context, String title, String subtitle) =>
@@ -1236,6 +1292,7 @@ Future<T?> showGlassMenu<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool reduceMotion = false,
+  List<IOSMenuOption<T>>? nativeOptions,
 }) async {
   if (!context.mounted) return null;
   if (_activeGlassOverlays[context] == true) return null;
@@ -1250,6 +1307,15 @@ Future<T?> showGlassMenu<T>({
       !box.hasSize ||
       box.size.isEmpty) {
     return null;
+  }
+  if (nativeIOSGlassEnabled && nativeOptions != null) {
+    _activeGlassOverlays[context] = true;
+    try {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return await showIOSMenu(context, nativeOptions);
+    } finally {
+      _activeGlassOverlays[context] = false;
+    }
   }
   final appearance = GlassAppearance.of(context);
   GlassMenuSource? source;
@@ -1614,14 +1680,17 @@ class _GlassOverlayRoute<T> extends PopupRoute<T> {
                   child: surface,
                 );
               }
-              final width = math.min(440.0, math.max(0.0, safe.width - 24));
+              final width = nativeIOSGlassEnabled
+                  ? safe.width
+                  : math.min(440.0, math.max(0.0, safe.width - 24));
               final height = math.max(0.0, safe.height - 22);
               return Stack(
                 children: [
                   Positioned(
                     left: safe.center.dx - width / 2,
-                    bottom:
-                        math.max(0, constraints.maxHeight - safe.bottom) + 10,
+                    bottom: nativeIOSGlassEnabled
+                        ? MediaQuery.viewInsetsOf(context).bottom
+                        : math.max(0, constraints.maxHeight - safe.bottom) + 10,
                     width: width,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(maxHeight: height),
@@ -1796,6 +1865,8 @@ class _GlassSheetState extends State<_GlassSheet>
                 ),
               ),
               Flexible(child: widget.child),
+              if (nativeIOSGlassEnabled)
+                SizedBox(height: MediaQuery.paddingOf(context).bottom),
             ],
           ),
         ),

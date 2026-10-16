@@ -698,6 +698,14 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
   Future<void> _choose(BuildContext anchor) async {
     final selected = await showGlassMenu<PublicationLibrary>(
       context: anchor,
+      nativeOptions: [
+        for (final library in _libraries)
+          IOSMenuOption(
+            library,
+            library.name,
+            selected: _selected?.id == library.id,
+          ),
+      ],
       reduceMotion: widget.state.reduceMotion,
       builder: (menuContext) => SizedBox(
         width: 260,

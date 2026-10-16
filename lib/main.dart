@@ -27,6 +27,7 @@ import 'updates/app_updates.dart';
 import 'updates/update_page.dart';
 import 'wenku_account.dart';
 import 'wenku_features.dart';
+import 'ios_glass.dart';
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +36,7 @@ Future<void> main() async {
   // Do not hold the first frame while Android is applying window insets.
   unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   final state = await LibraryState.load();
+  await IOSPlatformLayout.initialize();
   if (state.performance.needsRuntimeEffects) await NativeEffects.prepare();
   final brightness = switch (state.theme) {
     ThemeMode.light => Brightness.light,

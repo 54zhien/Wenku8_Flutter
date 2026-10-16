@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'native_effects.dart';
+import 'ios_glass.dart';
 
 /// Reference radius profile for the continuous-kernel renderer. The default
 /// renderer feathers a live native Gaussian, without an opaque gradient fill.
@@ -25,15 +26,35 @@ class ProgressiveBlur extends StatelessWidget {
   final bool fromBottom;
 
   @override
-  Widget build(BuildContext context) => IgnorePointer(
-    child: maxSigma <= 0
-        ? const SizedBox.expand()
-        : NativeBackdrop(
-            effect: NativeEffect.progressive,
-            blur: maxSigma,
-            plateau: plateauHeight,
-            fromBottom: fromBottom,
+  Widget build(BuildContext context) => nativeIOSGlassEnabled
+      // Flutter's shader/backdrop compositor can obscure UIKit foregrounds.
+      // This is a scroll-edge legibility fade, not a simulated glass material.
+      ? IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: fromBottom
+                    ? Alignment.bottomCenter
+                    : Alignment.topCenter,
+                end: fromBottom ? Alignment.topCenter : Alignment.bottomCenter,
+                colors: [
+                  Theme.of(context).colorScheme.surface.withValues(alpha: .94),
+                  Theme.of(context).colorScheme.surface.withValues(alpha: 0),
+                ],
+              ),
+            ),
             child: const SizedBox.expand(),
           ),
-  );
+        )
+      : IgnorePointer(
+          child: maxSigma <= 0
+              ? const SizedBox.expand()
+              : NativeBackdrop(
+                  effect: NativeEffect.progressive,
+                  blur: maxSigma,
+                  plateau: plateauHeight,
+                  fromBottom: fromBottom,
+                  child: const SizedBox.expand(),
+                ),
+        );
 }

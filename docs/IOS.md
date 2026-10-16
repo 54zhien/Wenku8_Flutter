@@ -22,7 +22,11 @@ flutter run --dart-define=WENKU8_NATIVE_GLASS=true
 flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
 ```
 
-使用系统 UIGlassEffect、UIButton.Configuration.glass 和 UIKit 控件。原型中的玻璃背景能否正确显示 Flutter 内容、中文标签尺寸、VoiceOver 和快速滚动都必须单独检查。开关用于这轮验证；正式启用需要原型验收。菜单、文本按钮和完整面板的原生替换尚未推广；没有 SF Symbol 映射的按钮保留原控件，不能称全部控件已完成玻璃化。
+使用系统 UIGlassEffect、UIButton.Configuration.glass 和 UIKit 控件。原型中的玻璃背景能否正确显示 Flutter 内容、中文标签尺寸、VoiceOver 和快速滚动都必须单独检查。开关用于这轮验证；正式启用需要原型验收。没有 SF Symbol 映射的按钮保留原控件，不能称全部控件已完成玻璃化。
+
+本轮 HIG 修订：导航采用 UITabBarController，阅读操作采用 UIToolbar；尺寸由 UIKit 布局回传，避免用固定窄胶囊冒充系统标签栏。排序、筛选、外观、缓存、历史等菜单采用 UIMenu，保留原选项和返回值。纯文字动作、开关、滑块与分段选择使用 UIKit，混合内容面板保留 Flutter 文本和排版，背景使用原生 UIGlassEffect。iOS 不再叠加 Flutter 自绘玻璃/渐变模糊来过滤 UIKit 前景；滚动边缘只做内容清晰度渐变。系统玻璃的模糊/不透明度由系统管理，不显示无效的应用自绘材质调节项。
+
+布局遵循 Apple 的 [Layout](https://developer.apple.com/design/human-interface-guidelines/layout)、[Tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars)、[Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars) 和 [Adopting Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)。HIG 没有一个适用于所有设备的底栏像素偏移；系统布局与安全区是依据。混合合成限制见 [Flutter 官方文档](https://docs.flutter.dev/platform-integration/ios/platform-views)。iPad 的系统栏位置与 iPhone 不同，须单独验证，不能据 iPhone 结果宣称已完成。
 
 ## 联网与数据
 
@@ -57,6 +61,8 @@ macOS 的 `.github/workflows/ios.yml` 还会构建模拟器候选，并执行 Ru
 
 原生测试通过后，工作流会捕获模拟器浅色/深色预览，并构建 `Wenku8-ios26-unsigned.ipa`。这是未签名的设备候选，需要自行签名后才能安装；成功生成也不代表真机验收通过。带玻璃开关的构建用于验证原型，不能代替完整控件迁移的验收。
 
+CI 通过 `ruby tools/configure_ios_ui_tests.rb` 配置独立的 RunnerUITests。界面测试覆盖大小两种 iPhone、深浅色、菜单返回、设置控件、搜索键盘、横屏、实际在线书籍打开及阅读设置/书签面板；XCTest 附件用于人工查看真实构建结果。脚本仅增加测试目标，不修改应用逻辑。失败、取消和截图检查必须单独记录；新增测试不等于测试已经通过。
+
 验收时逐项记录：
 
 - 搜索 → 详情 → 目录 → 正文 → 封面与插图。
@@ -69,3 +75,6 @@ macOS 的 `.github/workflows/ios.yml` 还会构建模拟器候选，并执行 Ru
 - 原生玻璃材质、点击/拖动、键盘恢复、路由返回、深浅主题和系统可访问性。
 
 Windows 上的 Swift 语法解析与 Foundation 测试不能替代 UIKit 类型检查或 iOS 构建。未经独立测试，不声明 iPhone/iPad 真机验收或 IPA 交付完成。
+## 流畅性证据
+
+已复现的额外开销、保持动画轨迹的优化及模拟器数据限制见 [IOS_PERFORMANCE.md](IOS_PERFORMANCE.md)。修订版本地完整测试 529 项通过；真机 release 帧交付仍需单独验收。

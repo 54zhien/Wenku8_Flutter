@@ -174,7 +174,7 @@ class _ReaderToolsState extends State<ReaderTools> {
           _adjustment(
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-              child: CupertinoSlidingSegmentedControl<String>(
+              child: AdaptiveSegmentedControl<String>(
                 groupValue: _tab,
                 children: const {
                   'layout': Text('排版与进度'),
@@ -301,8 +301,9 @@ class _ReaderToolsState extends State<ReaderTools> {
                     builder: (context, _) => Row(
                       children: [
                         const Expanded(child: Text('阅读时保持亮屏')),
-                        CupertinoSwitch(
+                        adaptiveSwitch(
                           key: const ValueKey('reader-keep-screen-on'),
+                          label: '阅读时保持亮屏',
                           value: widget.state.keepScreenOn,
                           activeTrackColor: Theme.of(
                             context,

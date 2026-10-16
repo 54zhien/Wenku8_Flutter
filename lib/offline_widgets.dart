@@ -81,6 +81,20 @@ class OfflineBookMenu extends StatelessWidget {
     final job = repository.jobFor(novel.id);
     final selected = await showGlassMenu<_BookAction>(
       context: context,
+      nativeOptions: [
+        if (job?.active == true)
+          const IOSMenuOption(_BookAction.cancel, '取消下载')
+        else ...[
+          const IOSMenuOption(_BookAction.all, '下载全部章节'),
+          if (novel.chapters.isNotEmpty)
+            const IOSMenuOption(_BookAction.next, '下载后续 20 章'),
+          if (job?.phase == DownloadPhase.failed ||
+              job?.phase == DownloadPhase.cancelled)
+            const IOSMenuOption(_BookAction.retry, '继续下载'),
+        ],
+        if (repository.cache.book(novel.id) != null)
+          const IOSMenuOption(_BookAction.remove, '清除这本缓存', destructive: true),
+      ],
       reduceMotion: reduceMotion || MediaQuery.disableAnimationsOf(context),
       builder: (menu) => Column(
         mainAxisSize: MainAxisSize.min,
@@ -163,6 +177,10 @@ Future<bool> _confirmClear(
 }) async =>
     await showGlassMenu<bool>(
       context: context,
+      nativeOptions: [
+        IOSMenuOption(true, label, destructive: true),
+        const IOSMenuOption(false, '保留缓存'),
+      ],
       reduceMotion: reduceMotion || MediaQuery.disableAnimationsOf(context),
       builder: (menu) => Column(
         mainAxisSize: MainAxisSize.min,

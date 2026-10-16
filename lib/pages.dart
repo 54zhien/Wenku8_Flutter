@@ -14,6 +14,7 @@ import 'archive_carousel.dart';
 import 'backup_page.dart';
 import 'catalog.dart';
 import 'glass_dock.dart';
+import 'ios_glass.dart';
 import 'library_state.dart';
 import 'listening/controller.dart';
 import 'listening/models.dart' show hasSpeechText;
@@ -55,6 +56,7 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
+  double _nativeTabExtent = 0;
   late final _catalog = NovelFeedController(
     widget.repository,
     initialItems: 60,
@@ -309,138 +311,159 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
         // Each tab/search paints its own archive diagram; the shell only
         // supplies the fallback canvas during a transition.
         archiveBackdrop: false,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        for (var i = 0; i < _pageWidgets.length; i++)
-                          if (i != _tab && i != _outgoingTab) _tabPlane(i),
-                        if (_outgoingTab case final outgoing?)
-                          _tabPlane(outgoing),
-                        _tabPlane(_tab),
-                      ],
-                    ),
-                  ),
-                  if (_searchMounted)
+        child: IOSNavigationInsets(
+          extent: _nativeTabExtent,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Stack(
+                  children: [
                     Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: !_searchOpen,
-                        child: ArchivePlaneTransition(
-                          key: const ValueKey('search-archive-plane'),
-                          animation: _searchExpansion,
-                          child: Atmosphere(
-                            child: InlineSearchResults(
-                              feed: _searchFeed,
-                              state: widget.state,
-                              repository: widget.repository,
-                              onOpenBook: _dismissSearchKeyboard,
-                              onRecall: _recallSearch,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          for (var i = 0; i < _pageWidgets.length; i++)
+                            if (i != _tab && i != _outgoingTab) _tabPlane(i),
+                          if (_outgoingTab case final outgoing?)
+                            _tabPlane(outgoing),
+                          _tabPlane(_tab),
+                        ],
+                      ),
+                    ),
+                    if (_searchMounted)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          ignoring: !_searchOpen,
+                          child: ArchivePlaneTransition(
+                            key: const ValueKey('search-archive-plane'),
+                            animation: _searchExpansion,
+                            child: Atmosphere(
+                              child: InlineSearchResults(
+                                feed: _searchFeed,
+                                state: widget.state,
+                                repository: widget.repository,
+                                onOpenBook: _dismissSearchKeyboard,
+                                onRecall: _recallSearch,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  Positioned(
-                    key: const ValueKey('home-pinned-header'),
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: FrostedHeader(
-                      child: _searchMounted
-                          ? _expandedSearchHeader(context)
-                          : ArchiveMotionScope(
-                              animation: _pageTransition,
-                              enabled: !_reduceMotion,
-                              child: Row(
-                                children: [
-                                  Expanded(child: _headers[_tab](context)),
-                                  if (ListeningScope.maybeOf(context)
-                                      case final listening?)
-                                    ValueListenableBuilder<ListeningSnapshot>(
-                                      valueListenable: listening.snapshot,
-                                      builder: (context, session, _) =>
-                                          session.novel == null ||
-                                              !session.active
-                                          ? const SizedBox.shrink()
-                                          : Padding(
-                                              padding: const EdgeInsets.only(
-                                                left: 4,
-                                              ),
-                                              child: GlassIconButton(
-                                                key: const ValueKey(
-                                                  'home-listening-entry',
+                    Positioned(
+                      key: const ValueKey('home-pinned-header'),
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: FrostedHeader(
+                        child: _searchMounted
+                            ? _expandedSearchHeader(context)
+                            : ArchiveMotionScope(
+                                animation: _pageTransition,
+                                enabled: !_reduceMotion,
+                                child: Row(
+                                  children: [
+                                    Expanded(child: _headers[_tab](context)),
+                                    if (ListeningScope.maybeOf(context)
+                                        case final listening?)
+                                      ValueListenableBuilder<ListeningSnapshot>(
+                                        valueListenable: listening.snapshot,
+                                        builder: (context, session, _) =>
+                                            session.novel == null ||
+                                                !session.active
+                                            ? const SizedBox.shrink()
+                                            : Padding(
+                                                padding: const EdgeInsets.only(
+                                                  left: 4,
                                                 ),
-                                                icon: CupertinoIcons.headphones,
-                                                label:
-                                                    '正在听书 · ${session.novel!.title}',
-                                                onPressed: () =>
-                                                    showListeningPanel(
-                                                      context,
-                                                      controller: listening,
-                                                      novel: session.novel!,
-                                                      chapter: session.chapter,
-                                                      paragraph:
-                                                          session
-                                                              .current
-                                                              ?.paragraph ??
-                                                          0,
-                                                      reduceMotion: widget
-                                                          .state
-                                                          .reduceMotion,
-                                                    ),
+                                                child: GlassIconButton(
+                                                  key: const ValueKey(
+                                                    'home-listening-entry',
+                                                  ),
+                                                  icon:
+                                                      CupertinoIcons.headphones,
+                                                  label:
+                                                      '正在听书 · ${session.novel!.title}',
+                                                  onPressed: () =>
+                                                      showListeningPanel(
+                                                        context,
+                                                        controller: listening,
+                                                        novel: session.novel!,
+                                                        chapter:
+                                                            session.chapter,
+                                                        paragraph:
+                                                            session
+                                                                .current
+                                                                ?.paragraph ??
+                                                            0,
+                                                        reduceMotion: widget
+                                                            .state
+                                                            .reduceMotion,
+                                                      ),
+                                                ),
                                               ),
-                                            ),
-                                    ),
-                                ],
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!nativeIOSGlassEnabled)
+                const Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: DockUnderlay(),
+                ),
+              AnimatedBuilder(
+                animation: _searchExpansion,
+                child: Align(
+                  alignment: nativeIOSGlassEnabled && IOSPlatformLayout.isPad
+                      ? Alignment.topCenter
+                      : Alignment.bottomCenter,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      nativeIOSGlassEnabled
+                          ? 0
+                          : 22 + MediaQuery.paddingOf(context).left,
+                      0,
+                      nativeIOSGlassEnabled
+                          ? 0
+                          : 22 + MediaQuery.paddingOf(context).right,
+                      nativeIOSGlassEnabled
+                          ? 0
+                          : 12 + MediaQuery.paddingOf(context).bottom,
+                    ),
+                    child: MediaQuery.viewInsetsOf(context).bottom > 0
+                        ? const SizedBox.shrink()
+                        : GlassDock(
+                            key: const ValueKey('liquid-dock'),
+                            selectedIndex: _tab,
+                            onExtentChanged: (height) {
+                              if ((_nativeTabExtent - height).abs() > .5) {
+                                setState(() => _nativeTabExtent = height);
+                              }
+                            },
+                            reduceMotion: widget.state.reduceMotion,
+                            onSelected: _selectTab,
+                          ),
+                  ),
+                ),
+                builder: (context, child) => IgnorePointer(
+                  ignoring: _searchMounted,
+                  child: ExcludeSemantics(
+                    excluding: _searchMounted,
+                    child: Opacity(
+                      opacity: 1 - _searchExpansion.value,
+                      child: child,
                     ),
                   ),
-                ],
-              ),
-            ),
-            const Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: DockUnderlay(),
-            ),
-            AnimatedBuilder(
-              animation: _searchExpansion,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    22 + MediaQuery.paddingOf(context).left,
-                    0,
-                    22 + MediaQuery.paddingOf(context).right,
-                    12 + MediaQuery.paddingOf(context).bottom,
-                  ),
-                  child: GlassDock(
-                    key: const ValueKey('liquid-dock'),
-                    selectedIndex: _tab,
-                    reduceMotion: widget.state.reduceMotion,
-                    onSelected: _selectTab,
-                  ),
                 ),
               ),
-              builder: (context, child) => IgnorePointer(
-                ignoring: _searchMounted,
-                child: ExcludeSemantics(
-                  excluding: _searchMounted,
-                  child: Opacity(
-                    opacity: 1 - _searchExpansion.value,
-                    child: child,
-                  ),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ),
@@ -797,6 +820,10 @@ class DiscoverPage extends StatelessWidget {
   Future<void> _chooseSort(BuildContext context) async {
     final selected = await showGlassMenu<NovelSort>(
       context: context,
+      nativeOptions: [
+        for (final sort in NovelSort.values)
+          IOSMenuOption(sort, sort.label, selected: feed!.sort == sort),
+      ],
       reduceMotion: state.reduceMotion,
       builder: (menuContext) => ConstrainedBox(
         constraints: BoxConstraints(
@@ -1332,6 +1359,14 @@ class _ShelfPageState extends State<ShelfPage> {
   Future<void> _chooseSort(BuildContext context) async {
     final sort = await showGlassMenu<_ShelfSort>(
       context: context,
+      nativeOptions: [
+        for (final (value, label) in [
+          (_ShelfSort.recentRead, '最近阅读'),
+          (_ShelfSort.recentAdded, '最近加入'),
+          (_ShelfSort.title, '书名'),
+        ])
+          IOSMenuOption(value, label, selected: value == _sort),
+      ],
       reduceMotion: state.reduceMotion,
       builder: (menuContext) => Column(
         mainAxisSize: MainAxisSize.min,
@@ -1361,6 +1396,15 @@ class _ShelfPageState extends State<ShelfPage> {
   Future<void> _chooseFilter(BuildContext context) async {
     final filter = await showGlassMenu<String>(
       context: context,
+      nativeOptions: [
+        for (final (value, label) in [
+          ('all', '全部'),
+          ('unread', '未读'),
+          ('reading', '阅读中'),
+          ('finished', '已读完'),
+        ])
+          IOSMenuOption(value, label, selected: state.shelfFilter == value),
+      ],
       reduceMotion: state.reduceMotion,
       builder: (menu) => Column(
         mainAxisSize: MainAxisSize.min,
@@ -1391,6 +1435,7 @@ class _ShelfPageState extends State<ShelfPage> {
   Future<void> _bookMenu(BuildContext context, int id, {Novel? book}) async {
     final remove = await showGlassMenu<bool>(
       context: context,
+      nativeOptions: const [IOSMenuOption(true, '移出书架', destructive: true)],
       reduceMotion: state.reduceMotion,
       builder: (menuContext) => GlassMenuItem(
         label: '移出书架',
@@ -1511,8 +1556,9 @@ class SettingsPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    CupertinoSwitch(
+                    adaptiveSwitch(
                       key: const ValueKey('settings-serif-font'),
+                      label: '内置思源宋体',
                       value: state.appTypeface == AppTypeface.sourceHanSerif,
                       activeTrackColor: Theme.of(context).colorScheme.primary,
                       onChanged: (value) => _savePreference(
@@ -1553,7 +1599,8 @@ class SettingsPage extends StatelessWidget {
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
-                      CupertinoSwitch(
+                      adaptiveSwitch(
+                        label: '阅读时保持亮屏',
                         value: state.keepScreenOn,
                         activeTrackColor: Theme.of(context).colorScheme.primary,
                         onChanged: (value) => _savePreference(
@@ -1580,7 +1627,8 @@ class SettingsPage extends StatelessWidget {
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
-                      CupertinoSwitch(
+                      adaptiveSwitch(
+                        label: '减少动态效果',
                         value: state.reduceMotion,
                         activeTrackColor: Theme.of(context).colorScheme.primary,
                         onChanged: (value) => _savePreference(
@@ -1651,56 +1699,58 @@ class SettingsPage extends StatelessWidget {
             ),
             const SizedBox(height: 24),
           ],
-          sectionHeader(context, '玻璃外观', '实时预览'),
-          const SizedBox(height: 14),
-          ContentPanel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _glassSettingLabel(
-                  context,
-                  '模糊度',
-                  '${state.glassBlur.round()}',
-                ),
-                CupertinoSlider(
-                  key: const ValueKey('glass-blur-slider'),
-                  value: state.glassBlur,
-                  min: 0,
-                  max: 24,
-                  divisions: 24,
-                  activeColor: Theme.of(context).colorScheme.primary,
-                  onChanged: (value) =>
-                      state.setGlassBlur(value, persist: false),
-                  onChangeEnd: state.setGlassBlur,
-                ),
-                const Divider(height: 22),
-                _glassSettingLabel(
-                  context,
-                  '不透明度',
-                  '${(state.glassOpacity * 100).round()}%',
-                ),
-                CupertinoSlider(
-                  key: const ValueKey('glass-opacity-slider'),
-                  value: state.glassOpacity,
-                  min: 0,
-                  max: 1,
-                  divisions: 100,
-                  activeColor: Theme.of(context).colorScheme.primary,
-                  onChanged: (value) =>
-                      state.setGlassOpacity(value, persist: false),
-                  onChangeEnd: state.setGlassOpacity,
-                ),
-                GlassTextButton(
-                  onPressed: () async {
-                    await state.setGlassBlur(8);
-                    await state.setGlassOpacity(.87);
-                  },
-                  child: const Text('恢复默认'),
-                ),
-              ],
+          if (!nativeIOSGlassEnabled) ...[
+            sectionHeader(context, '玻璃外观', '实时预览'),
+            const SizedBox(height: 14),
+            ContentPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _glassSettingLabel(
+                    context,
+                    '模糊度',
+                    '${state.glassBlur.round()}',
+                  ),
+                  CupertinoSlider(
+                    key: const ValueKey('glass-blur-slider'),
+                    value: state.glassBlur,
+                    min: 0,
+                    max: 24,
+                    divisions: 24,
+                    activeColor: Theme.of(context).colorScheme.primary,
+                    onChanged: (value) =>
+                        state.setGlassBlur(value, persist: false),
+                    onChangeEnd: state.setGlassBlur,
+                  ),
+                  const Divider(height: 22),
+                  _glassSettingLabel(
+                    context,
+                    '不透明度',
+                    '${(state.glassOpacity * 100).round()}%',
+                  ),
+                  CupertinoSlider(
+                    key: const ValueKey('glass-opacity-slider'),
+                    value: state.glassOpacity,
+                    min: 0,
+                    max: 1,
+                    divisions: 100,
+                    activeColor: Theme.of(context).colorScheme.primary,
+                    onChanged: (value) =>
+                        state.setGlassOpacity(value, persist: false),
+                    onChangeEnd: state.setGlassOpacity,
+                  ),
+                  GlassTextButton(
+                    onPressed: () async {
+                      await state.setGlassBlur(8);
+                      await state.setGlassOpacity(.87);
+                    },
+                    child: const Text('恢复默认'),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
+            const SizedBox(height: 24),
+          ],
           sectionHeader(context, '本地数据', ''),
           const SizedBox(height: 14),
           ContentPanel(
@@ -1822,29 +1872,51 @@ class SettingsPage extends StatelessWidget {
         ),
       ],
     );
-    final selector = GlassMenuAnchor(
-      child: Builder(
-        builder: (anchorContext) => LiquidGlass(
-          radius: 20,
-          elevated: false,
-          semanticLabel: '选择外观模式',
-          onTap: () => _chooseTheme(anchorContext),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(switch (state.theme) {
-                ThemeMode.system => '跟随系统',
-                ThemeMode.light => '浅色',
-                ThemeMode.dark => '深色',
-              }),
-              const SizedBox(width: 7),
-              const Icon(CupertinoIcons.chevron_down, size: 14),
+    final selector = nativeIOSGlassEnabled
+        ? IOSSelectionButton<ThemeMode>(
+            label: switch (state.theme) {
+              ThemeMode.system => '跟随系统',
+              ThemeMode.light => '浅色',
+              ThemeMode.dark => '深色',
+            },
+            semanticLabel: '选择外观模式',
+            options: [
+              for (final (mode, label) in [
+                (ThemeMode.system, '跟随系统'),
+                (ThemeMode.light, '浅色'),
+                (ThemeMode.dark, '深色'),
+              ])
+                IOSMenuOption(mode, label, selected: state.theme == mode),
             ],
-          ),
-        ),
-      ),
-    );
+            onSelected: (mode) =>
+                _savePreference(context, () => state.setTheme(mode)),
+          )
+        : GlassMenuAnchor(
+            child: Builder(
+              builder: (anchorContext) => LiquidGlass(
+                radius: 20,
+                elevated: false,
+                semanticLabel: '选择外观模式',
+                onTap: () => _chooseTheme(anchorContext),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(switch (state.theme) {
+                      ThemeMode.system => '跟随系统',
+                      ThemeMode.light => '浅色',
+                      ThemeMode.dark => '深色',
+                    }),
+                    const SizedBox(width: 7),
+                    const Icon(CupertinoIcons.chevron_down, size: 14),
+                  ],
+                ),
+              ),
+            ),
+          );
     return LayoutBuilder(
       builder: (context, constraints) {
         final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
@@ -1888,6 +1960,14 @@ class SettingsPage extends StatelessWidget {
   Future<void> _chooseTheme(BuildContext context) async {
     final selected = await showGlassMenu<ThemeMode>(
       context: context,
+      nativeOptions: [
+        for (final (value, label) in [
+          (ThemeMode.system, '跟随系统'),
+          (ThemeMode.light, '浅色'),
+          (ThemeMode.dark, '深色'),
+        ])
+          IOSMenuOption(value, label, selected: state.theme == value),
+      ],
       reduceMotion:
           state.reduceMotion || MediaQuery.disableAnimationsOf(context),
       builder: (menuContext) => Column(
@@ -3877,16 +3957,23 @@ class _ReaderPageState extends State<ReaderPage>
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: EdgeInsets.fromLTRB(
-                  22 + MediaQuery.paddingOf(context).left,
+                  nativeIOSGlassEnabled
+                      ? 0
+                      : 22 + MediaQuery.paddingOf(context).left,
                   0,
-                  22 + MediaQuery.paddingOf(context).right,
-                  MediaQuery.paddingOf(context).bottom + 12,
+                  nativeIOSGlassEnabled
+                      ? 0
+                      : 22 + MediaQuery.paddingOf(context).right,
+                  nativeIOSGlassEnabled
+                      ? 0
+                      : MediaQuery.paddingOf(context).bottom + 12,
                 ),
                 child: ReaderChromeLayer(
                   key: const ValueKey('reader-chrome-dock'),
                   animation: _chrome,
                   slide: const Offset(0, 8),
                   child: GlassDock(
+                    navigation: false,
                     key: const ValueKey('reader-liquid-dock'),
                     selectedIndex: 1,
                     reduceMotion: widget.state.reduceMotion,

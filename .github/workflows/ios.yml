@@ -12,7 +12,90 @@ permissions:
   contents: read
 
 jobs:
+  performance:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.5'
+          channel: stable
+          cache: true
+      - name: Boot motion comparison simulator
+        id: motion
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/motion-devices.json"
+          simulator=$(python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'motion-devices.json').read_text())
+          devices = [device for runtime, entries in data['devices'].items()
+                     if '.iOS-' in runtime and int(runtime.split('.iOS-')[1].split('-')[0]) >= 26
+                     for device in entries if device['name'] == 'iPhone 17 Pro' and device['isAvailable']]
+          if not devices:
+              raise SystemExit('No supported motion comparison simulator')
+          print(devices[0]['udid'])
+          PY
+          )
+          echo "udid=$simulator" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$simulator"
+          xcrun simctl bootstatus "$simulator" -b
+      - name: Compile and measure release AOT paper kernel
+        run: |
+          set -euo pipefail
+          mkdir -p build/motion
+          flutter pub get
+          dart compile exe native_tests/benchmark_paper_depth.dart -o build/motion/paper-depth-aot
+          build/motion/paper-depth-aot > build/motion/paper-depth-aot.json
+          cat build/motion/paper-depth-aot.json
+      - name: Compare the original and revised iOS transition scenes
+        timeout-minutes: 28
+        run: |
+          set -euo pipefail
+          candidate_root="$GITHUB_WORKSPACE"
+          baseline_root="$RUNNER_TEMP/wenku-motion-before"
+          git fetch --depth=1 origin 11f307775495a3824c98a920d84caf881717b4ce
+          git worktree add --detach "$baseline_root" FETCH_HEAD
+          cp integration_test/ios_motion_benchmark_test.dart "$baseline_root/integration_test/ios_motion_benchmark_test.dart"
+          for variant in before after; do
+            if [ "$variant" = before ]; then cd "$baseline_root"; else cd "$candidate_root"; fi
+            flutter pub get
+            flutter test --no-pub integration_test/ios_motion_benchmark_test.dart -d '${{ steps.motion.outputs.udid }}' --dart-define=WENKU8_NATIVE_GLASS=true --dart-define="BENCHMARK_LABEL=$variant" --reporter expanded 2>&1 | tee "$candidate_root/build/motion/$variant.log"
+            container=$(xcrun simctl get_app_container '${{ steps.motion.outputs.udid }}' org.mewx.wenku8Flutter data)
+            cp "$container/tmp/wenku-motion-benchmark.json" "$candidate_root/build/motion/$variant.json"
+          done
+          cd "$candidate_root"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('build/motion')
+          before = json.loads((root / 'before.json').read_text())
+          after = json.loads((root / 'after.json').read_text())
+          assert before['mode'] == after['mode'] == 'debug'
+          assert before['physical_size'] == after['physical_size']
+          comparison = {'scope': 'same iOS simulator debug scenes; not release FPS or physical-device acceptance', 'before_sha': '11f307775495a3824c98a920d84caf881717b4ce', 'scenes': {}}
+          for name, original in before['scenes'].items():
+              revised = after['scenes'][name]
+              assert original['refresh_hz'] == revised['refresh_hz']
+              comparison['scenes'][name] = {variant: {key: value for key, value in data.items() if key != 'frames'} for variant, data in [('before', original), ('after', revised)]}
+          (root / 'comparison.json').write_text(json.dumps(comparison, indent=2))
+          print(json.dumps(comparison, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios26-motion-${{ github.sha }}
+          path: build/motion
+          if-no-files-found: ignore
   ios:
+    needs: performance
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -43,11 +126,23 @@ jobs:
               raise SystemExit('No iOS 26+ iPhone simulator is installed')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('udid=' + candidates[0]['udid'] + '\n')
+              small = next((item for item in candidates if item['name'] == 'iPhone SE (3rd generation)'), None)
+              if small is None:
+                  raise SystemExit('No small iOS 26+ iPhone simulator is installed')
+              output.write('small_udid=' + small['udid'] + '\n')
+              pad = next((device for runtime, devices in data['devices'].items()
+                          if '.iOS-' in runtime and int(runtime.split('.iOS-')[1].split('-')[0]) >= 26
+                          for device in devices if device['isAvailable'] and device['name'].startswith('iPad Pro 11-inch')), None)
+              if pad is None:
+                  raise SystemExit('No iPadOS 26+ simulator is installed')
+              output.write('pad_udid=' + pad['udid'] + '\n')
           PY
       - run: python3 tools/check_public_source.py
       - run: flutter pub get
       - run: flutter analyze --no-pub
       - run: flutter test --no-pub
+      - name: Check iOS native-control widget contracts
+        run: flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true test/ios_glass_test.dart
       - name: Execute Foundation protocol tests
         run: |
           swiftc -parse-as-library ios/Runner/WenkuProtocol.swift ios/Runner/WenkuControlPolicy.swift ios/Runner/WenkuGBK.swift native_tests/WenkuProtocolTests.swift -o "$RUNNER_TEMP/wenku-protocol-tests"
@@ -83,6 +178,38 @@ jobs:
             sleep 5
             xcrun simctl io "$simulator" screenshot "build/ios/previews/$appearance.png"
           done
+      - name: Configure system interface acceptance tests
+        run: ruby tools/configure_ios_ui_tests.rb
+      - name: Test large iPhone in light appearance
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          xcrun simctl ui '${{ steps.simulator.outputs.udid }}' appearance light
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.simulator.outputs.udid }}' -parallel-testing-enabled NO -only-testing:RunnerUITests -resultBundlePath build/ios/ui-large-light.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Boot small iPhone
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          xcrun simctl boot '${{ steps.simulator.outputs.small_udid }}'
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.small_udid }}' -b
+          xcrun simctl ui '${{ steps.simulator.outputs.small_udid }}' appearance dark
+      - name: Test small iPhone in dark appearance
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.simulator.outputs.small_udid }}' -parallel-testing-enabled NO -only-testing:RunnerUITests -resultBundlePath build/ios/ui-small-dark.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Boot iPad
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          xcrun simctl boot '${{ steps.simulator.outputs.pad_udid }}'
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.pad_udid }}' -b
+          xcrun simctl ui '${{ steps.simulator.outputs.pad_udid }}' appearance light
+      - name: Test iPad system placement
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.simulator.outputs.pad_udid }}' -parallel-testing-enabled NO -only-testing:RunnerUITests -resultBundlePath build/ios/ui-pad-light.xcresult CODE_SIGNING_ALLOWED=NO
       - name: Build unsigned iPhone candidate
         shell: bash
         run: |
@@ -105,6 +232,23 @@ jobs:
           name: ios26-previews-${{ github.sha }}
           path: build/ios/previews/*.png
           if-no-files-found: ignore
+      - name: Export interface test images
+        if: always()
+        run: |
+          set -euo pipefail
+          for variant in large-light small-dark pad-light; do
+            bundle="build/ios/ui-$variant.xcresult"
+            if [ -f "$bundle/Info.plist" ]; then
+              xcrun xcresulttool export attachments --path "$bundle" --output-path "build/ios/ui-previews/$variant"
+            fi
+          done
+      - name: Save interface test images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios26-interface-${{ github.sha }}
+          path: build/ios/ui-previews
+          if-no-files-found: ignore
       - name: Save test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,5 +256,6 @@ jobs:
           name: ios26-test-evidence
           path: |
             build/ios/native-tests.xcresult
+            build/ios/ui-*.xcresult
             build/ios/diagnostics
           if-no-files-found: ignore

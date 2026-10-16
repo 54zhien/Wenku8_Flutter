@@ -253,47 +253,54 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
                 builder: (context, index, _) {
                   final book = widget.books[index % widget.books.length];
                   final scale = MediaQuery.textScalerOf(context).scale(17) / 17;
-                  return SizedBox(
-                    height: 16 + 17 * 1.35 * 2 * scale + 12 * 1.4 * scale,
-                    child: JellyTapSurface(
-                      key: const ValueKey('archive-shelf-open'),
-                      onTap: () => _open(_pose.focus.round()),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    book.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 17,
-                                      height: 1.35,
-                                      fontWeight: FontWeight.w700,
+                  return Semantics(
+                    identifier: 'archive-shelf-open',
+                    button: true,
+                    child: SizedBox(
+                      height: 16 + 17 * 1.35 * 2 * scale + 12 * 1.4 * scale,
+                      child: JellyTapSurface(
+                        key: const ValueKey('archive-shelf-open'),
+                        onTap: () => _open(_pose.focus.round()),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      book.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 17,
+                                        height: 1.35,
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    '${book.author} · ${book.isComplete ? '已完结' : '连载中'}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      height: 1.4,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
+                                    Text(
+                                      '${book.author} · ${book.isComplete ? '已完结' : '连载中'}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        height: 1.4,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(CupertinoIcons.arrow_up_right, size: 20),
-                          ],
+                              const SizedBox(width: 8),
+                              const Icon(
+                                CupertinoIcons.arrow_up_right,
+                                size: 20,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

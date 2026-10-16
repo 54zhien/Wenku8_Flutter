@@ -29,6 +29,8 @@ class GlassDock extends StatefulWidget {
     required this.selectedIndex,
     required this.onSelected,
     this.reduceMotion = false,
+    this.navigation = true,
+    this.onExtentChanged,
     this.items = const [
       GlassDockItem(CupertinoIcons.house, '发现'),
       GlassDockItem(CupertinoIcons.book, '书架'),
@@ -39,6 +41,8 @@ class GlassDock extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final bool reduceMotion;
+  final bool navigation;
+  final ValueChanged<double>? onExtentChanged;
   final List<GlassDockItem> items;
 
   @override
@@ -231,9 +235,17 @@ class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
     if (nativeIOSGlassEnabled &&
         widget.items.every((item) => iosSystemSymbol(item.icon) != null)) {
       return IOSGlassControl(
-        kind: 'dock',
-        width: 196,
-        height: 54,
+        kind: widget.navigation ? 'tabbar' : 'toolbar',
+        width: double.infinity,
+        // Bootstrap only; UIKit reports the actual system bar height.
+        height: 96,
+        onMetrics: (metrics) {
+          if (metrics['height'] case final num height) {
+            if (height.isFinite) {
+              widget.onExtentChanged?.call(height.toDouble());
+            }
+          }
+        },
         configuration: {
           'selectedIndex': widget.selectedIndex,
           'items': [
