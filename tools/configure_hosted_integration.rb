@@ -27,11 +27,14 @@ source = <<~OBJC
     XCTAssertTrue([[NSData data] writeToFile:readyPath atomically:YES], @"Cannot signal the native test-host readiness");
     NSLog(@"WENKU_NATIVE_HOST ready %@", readyPath);
     IntegrationTestPlugin *plugin = [IntegrationTestPlugin instance];
-    NSPredicate *predicate = [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-      return plugin.testResults != nil;
-    }];
-    XCTNSPredicateExpectation *finished = [[XCTNSPredicateExpectation alloc] initWithPredicate:predicate object:nil];
-    [self waitForExpectations:@[finished] timeout:240];
+    // Match FLTIntegrationTestRunner: keep the UI runloop servicing Dart and
+    // Flutter frame work while native XCTest waits. Retain our bounded budget.
+    NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 240.0;
+    while (!plugin.testResults) {
+      NSTimeInterval remaining = deadline - NSProcessInfo.processInfo.systemUptime;
+      if (remaining <= 0) break;
+      [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:MIN(1.0, remaining)]];
+    }
     NSDictionary *results = plugin.testResults;
     XCTAssertNotNil(results, @"Dart integration never reported results within its execution budget");
     if (!results) return;
