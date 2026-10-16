@@ -162,7 +162,7 @@ private final class WenkuGlassRoot: UIView {
     super.didMoveToWindow(); WenkuWindowCapture.invalidate(); setNeedsLayout()
     if window != nil { attached?() }
 #if DEBUG
-    else { probeDetached?() }
+    if window == nil { probeDetached?() }
 #endif
   }
 }
@@ -206,9 +206,18 @@ private enum WenkuWindowCapture {
   }
   static func image(_ window: UIWindow) -> WenkuWindowImage? {
     let key = ObjectIdentifier(window)
-    if let cached = images[key], cached.bounds == window.bounds,
-      CACurrentMediaTime() < cached.expiresAt { return cached }
-    if images[key] != nil { invalidate() }
+    if let cached = images[key] {
+      if cached.bounds == window.bounds {
+        // Do not turn an expired, slow capture into another full-window
+        // readback for EACH remaining control in this same main-loop batch.
+        // Those controls keep their live native fallback until normal expiry.
+        guard CACurrentMediaTime() < cached.expiresAt else {
+          WenkuGlassWork.add("snapshot_batch_expired"); return nil
+        }
+        return cached
+      }
+      invalidate()
+    }
     guard window.bounds.width > 0, window.bounds.height > 0 else { return nil }
     let format = UIGraphicsImageRendererFormat()
     format.opaque = false; format.preferredRange = .standard

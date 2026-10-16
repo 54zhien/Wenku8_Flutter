@@ -221,6 +221,28 @@ final class RunnerTests: XCTestCase {
   }
 
   @MainActor
+  func testSlowWindowReadbackDoesNotRepeatForEveryControlInOneBatch() async throws {
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = StalledCaptureWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 180, height: 260)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    controller.view.backgroundColor = .white
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+    let first = WenkuControlTexture(), second = WenkuControlTexture()
+    XCTAssertTrue(first.capture(controller.view))
+    XCTAssertFalse(second.capture(controller.view), "Expired batches preserve the live fallback without another readback")
+    XCTAssertEqual(window.readbacks, 1)
+    await withCheckedContinuation { continuation in
+      CaptureDisplayFrames.wait(2) { continuation.resume() }
+    }
+    XCTAssertTrue(second.capture(controller.view), "A new display batch may capture again")
+    XCTAssertEqual(window.readbacks, 2)
+    XCTAssertGreaterThan(second.probeCaptureRevision, first.probeCaptureRevision)
+  }
+
+  @MainActor
   func testNativeControlTextureKeepsBGRAOrientationAndLastValidFrame() throws {
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let window = UIWindow(windowScene: scene)
@@ -298,6 +320,21 @@ final class RunnerTests: XCTestCase {
     wait(for: [done], timeout: 5)
   }
 
+}
+
+/// Deterministically inject a capture that holds the main thread across two
+/// display intervals. No event-loop yield can expire the newly stored batch.
+@MainActor
+private final class StalledCaptureWindow: UIWindow {
+  private(set) var readbacks = 0
+  override func drawHierarchy(in rect: CGRect, afterScreenUpdates afterUpdates: Bool) -> Bool {
+    readbacks += 1
+    let result = super.drawHierarchy(in: rect, afterScreenUpdates: afterUpdates)
+    let fps = max(1, windowScene?.screen.maximumFramesPerSecond ?? 60)
+    let end = CACurrentMediaTime() + 2 / Double(fps)
+    while CACurrentMediaTime() < end {}
+    return result
+  }
 }
 
 @MainActor
