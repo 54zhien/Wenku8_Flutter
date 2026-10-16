@@ -68,8 +68,16 @@ jobs:
             if [ "$variant" = before ]; then cd "$baseline_root"; else cd "$candidate_root"; fi
             flutter pub get
             flutter test --no-pub integration_test/ios_motion_benchmark_test.dart -d '${{ steps.motion.outputs.udid }}' --dart-define=WENKU8_NATIVE_GLASS=true --dart-define="BENCHMARK_LABEL=$variant" --reporter expanded 2>&1 | tee "$candidate_root/build/motion/$variant.log"
-            container=$(xcrun simctl get_app_container '${{ steps.motion.outputs.udid }}' org.mewx.wenku8Flutter data)
-            cp "$container/tmp/wenku-motion-benchmark.json" "$candidate_root/build/motion/$variant.json"
+            python3 - "$candidate_root/build/motion/$variant.log" "$candidate_root/build/motion/$variant.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          marker = 'WENKU_MOTION_JSON='
+          records = [line.split(marker, 1)[1] for line in Path(sys.argv[1]).read_text().splitlines() if marker in line]
+          assert len(records) == 1, 'Missing or duplicate motion report'
+          report = json.loads(records[0])
+          assert len(report['scenes']) == 2
+          Path(sys.argv[2]).write_text(json.dumps(report, indent=2))
+          PY
           done
           cd "$candidate_root"
           python3 - <<'PY'
@@ -83,6 +91,8 @@ jobs:
           comparison = {'scope': 'same iOS simulator debug scenes; not release FPS or physical-device acceptance', 'before_sha': '11f307775495a3824c98a920d84caf881717b4ce', 'scenes': {}}
           for name, original in before['scenes'].items():
               revised = after['scenes'][name]
+              assert revised['native_counts_available'] is True, 'Candidate native probes are missing'
+              assert isinstance(revised['native_work_counts'], dict)
               assert original['refresh_hz'] == revised['refresh_hz']
               comparison['scenes'][name] = {variant: {key: value for key, value in data.items() if key != 'frames'} for variant, data in [('before', original), ('after', revised)]}
           (root / 'comparison.json').write_text(json.dumps(comparison, indent=2))

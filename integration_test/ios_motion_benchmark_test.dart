@@ -132,7 +132,11 @@ void main() {
       for (var repeat = 0; repeat < 5; repeat++) {
         final open = find.byKey(const ValueKey('archive-shelf-open'));
         await tester.ensureVisible(open);
-        await tester.tap(open);
+        // The wrapper's RenderTransform does not appear in its child's hit-test
+        // path. Target the actual InkWell, retaining real pointer dispatch.
+        await tester.tap(
+          find.descendant(of: open, matching: find.byType(InkWell)),
+        );
         await tester.pumpAndSettle();
         expect(find.byType(DetailPage), findsOneWidget);
         Navigator.of(tester.element(find.byType(DetailPage))).pop();
@@ -174,6 +178,10 @@ void main() {
       '${Directory.systemTemp.path}/wenku-motion-benchmark.json',
     );
     await file.writeAsString(jsonEncode(report), flush: true);
+    // flutter test uninstalls the integration app on exit. Export through the
+    // VM-service stdout stream before its sandbox is removed.
+    // ignore: avoid_print
+    print('WENKU_MOTION_JSON=${jsonEncode(report)}');
     // ignore: avoid_print
     print('WENKU_MOTION_REPORT=${file.path}');
     await tester.pumpWidget(const SizedBox.shrink());
