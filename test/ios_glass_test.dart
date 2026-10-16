@@ -10,6 +10,34 @@ import 'package:wenku8_flutter/native_effects.dart';
 import 'package:wenku8_flutter/scroll_edge_blur.dart';
 
 void main() {
+  testWidgets('system menus receive the app appearance and typed selection', (
+    tester,
+  ) async {
+    const channel = MethodChannel('org.mewx.wenku8/glass_presentation');
+    Map? arguments;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      arguments = call.arguments as Map;
+      return 1;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    for (final brightness in Brightness.values) {
+      final anchor = GlobalKey();
+      await tester.pumpWidget(
+        CupertinoApp(
+          theme: CupertinoThemeData(brightness: brightness),
+          home: Center(child: SizedBox(key: anchor, width: 80, height: 44)),
+        ),
+      );
+      final selected = await showIOSMenu(anchor.currentContext!, const [
+        IOSMenuOption(3, 'first', selected: true),
+        IOSMenuOption(7, 'second'),
+      ]);
+      expect(selected, 7);
+      expect(arguments!['dark'], brightness == Brightness.dark);
+    }
+  });
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(

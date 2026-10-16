@@ -359,6 +359,7 @@ Future<T?> showIOSMenu<T>(
   final origin = box.localToGlobal(Offset.zero);
   final index = await const MethodChannel('org.mewx.wenku8/glass_presentation')
       .invokeMethod<int>('menu', {
+        'dark': CupertinoTheme.brightnessOf(context) == Brightness.dark,
         'anchor': {
           'x': origin.dx,
           'y': origin.dy,

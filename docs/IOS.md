@@ -77,4 +77,4 @@ CI 通过 `ruby tools/configure_ios_ui_tests.rb` 配置独立的 RunnerUITests�
 Windows 上的 Swift 语法解析与 Foundation 测试不能替代 UIKit 类型检查或 iOS 构建。未经独立测试，不声明 iPhone/iPad 真机验收或 IPA 交付完成。
 ## 流畅性证据
 
-已复现的额外开销、保持动画轨迹的优化及模拟器数据限制见 [IOS_PERFORMANCE.md](IOS_PERFORMANCE.md)。修订版本地完整测试 529 项通过；真机 release 帧交付仍需单独验收。
+已复现的额外开销、保持动画轨迹的优化及模拟器数据限制见 [IOS_PERFORMANCE.md](IOS_PERFORMANCE.md)。加入原生菜单主题回归后，本地完整测试 530 项通过；真机 release 帧交付仍需单独验收。

@@ -25,6 +25,11 @@ void main() {
   testWidgets('record the same real book and search transitions', (
     tester,
   ) async {
+    final previousHitTestPolicy = WidgetController.hitTestWarningShouldBeFatal;
+    WidgetController.hitTestWarningShouldBeFatal = true;
+    addTearDown(() {
+      WidgetController.hitTestWarningShouldBeFatal = previousHitTestPolicy;
+    });
     SharedPreferences.setMockInitialValues({});
     final state = await LibraryState.load();
     await NativeEffects.prepare();
@@ -130,6 +135,7 @@ void main() {
 
     await record('book_open_and_return_warm', () async {
       for (var repeat = 0; repeat < 5; repeat++) {
+        expect(find.byType(DetailPage), findsNothing);
         final open = find.byKey(const ValueKey('archive-shelf-open'));
         await tester.ensureVisible(open);
         // The wrapper's RenderTransform does not appear in its child's hit-test
@@ -139,8 +145,13 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(DetailPage), findsOneWidget);
+        expect(
+          tester.widget<DetailPage>(find.byType(DetailPage)).novel.id,
+          books.first.id,
+        );
         Navigator.of(tester.element(find.byType(DetailPage))).pop();
         await tester.pumpAndSettle();
+        expect(find.byType(DetailPage), findsNothing);
       }
     });
     await record('search_open_and_close', () async {
@@ -154,8 +165,10 @@ void main() {
         );
         search.onPressed!();
         await tester.pumpAndSettle();
+        expect(find.byType(InlineSearchResults), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('inline-search-close')));
         await tester.pumpAndSettle();
+        expect(find.byType(InlineSearchResults), findsNothing);
       }
     });
     final report = {

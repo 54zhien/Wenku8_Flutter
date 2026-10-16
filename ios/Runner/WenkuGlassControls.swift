@@ -43,6 +43,7 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
     }
     while let next = presenter.presentedViewController { presenter = next }
     let button = WenkuMenuButton(type: .system)
+    button.overrideUserInterfaceStyle = args["dark"] as? Bool == true ? .dark : .light
     let anchor = args["anchor"] as? [String: NSNumber] ?? [:]
     let windowRect = CGRect(x: anchor["x"]?.doubleValue ?? 0, y: anchor["y"]?.doubleValue ?? 0,
       width: max(1, anchor["width"]?.doubleValue ?? 44), height: max(1, anchor["height"]?.doubleValue ?? 44))
@@ -279,7 +280,10 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
         surface.backgroundColor = opaque ? .systemBackground : .clear
       }
     }
-    if let tabs { tabs.selectedIndex = max(0, min((tabs.viewControllers?.count ?? 1) - 1, args["selectedIndex"] as? Int ?? 0)) }
+    if let tabs {
+      tabs.overrideUserInterfaceStyle = style
+      tabs.selectedIndex = max(0, min((tabs.viewControllers?.count ?? 1) - 1, args["selectedIndex"] as? Int ?? 0))
+    }
     if let toolbar {
       let items = args["items"] as? [[String: Any]] ?? []
       for (index, item) in items.enumerated() {
