@@ -78,3 +78,8 @@ Windows 上的 Swift 语法解析与 Foundation 测试不能替代 UIKit 类型�
 ## 流畅性证据
 
 已复现的额外开销、保持动画轨迹的优化及模拟器数据限制见 [IOS_PERFORMANCE.md](IOS_PERFORMANCE.md)。加入原生菜单主题、导航栏生命周期和状态栏回归后，本地完整测试 532 项通过；真机 release 帧交付仍需单独验收。
+
+
+## Independent unaccepted device archive
+
+`.github/workflows/ios-diagnostic.yml` builds an unsigned release `.xcarchive` without launching a simulator. Flutter 3.41.5 `build ipa --no-codesign` explicitly skips IPA export after archiving; the diagnostic workflow keeps that behavior. Its `UNACCEPTED.json` records the source SHA and verifies device arm64 Mach-O platform, iOS 26.0 minimum deployment, required App/Flutter frameworks and the verified GBK resource. This is compilation/archive evidence only. It does not replace the original interface/performance gates, generate the formal IPA or claim visual/device acceptance. Simulator-only interaction, popup selection shape, keyboard/multi-size layout and native composition checks remain outstanding until actually run.

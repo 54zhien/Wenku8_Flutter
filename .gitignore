@@ -134,3 +134,6 @@ key.properties
 
 !/tools/select_ios_simulators.py
 !/tools/test_select_ios_simulators.py
+
+!/tools/verify_ios_archive.py
+!/tools/test_verify_ios_archive.py

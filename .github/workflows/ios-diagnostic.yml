@@ -1,0 +1,50 @@
+name: Unaccepted iOS device archive
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/ios26-port']
+    paths: ['lib/**', 'ios/**', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios-diagnostic.yml', 'tools/verify_ios_archive.py', 'tools/test_verify_ios_archive.py']
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic-device:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.5'
+          channel: stable
+          cache: true
+      - run: python3 tools/check_public_source.py
+      - name: Verify archive inspection tooling
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - run: flutter pub get
+      - run: flutter analyze --no-pub
+      - name: Execute Foundation protocol checks without simulator
+        run: |
+          swiftc -parse-as-library ios/Runner/WenkuProtocol.swift ios/Runner/WenkuControlPolicy.swift ios/Runner/WenkuGBK.swift native_tests/WenkuProtocolTests.swift -o "$RUNNER_TEMP/wenku-protocol-tests"
+          "$RUNNER_TEMP/wenku-protocol-tests"
+      - name: Compile and archive unaccepted device diagnostic
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios/diagnostic-device
+          xcodebuild -version > build/ios/diagnostic-device/toolchain.txt
+          flutter build ipa --release --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true 2>&1 | tee build/ios/diagnostic-device/archive.log
+          python3 tools/verify_ios_archive.py build/ios/archive --sha "$GITHUB_SHA" --output build/ios/diagnostic-device/UNACCEPTED.json
+          ditto -c -k --keepParent build/ios/archive build/ios/diagnostic-device/UNACCEPTED-device-archive.zip
+          shasum -a 256 build/ios/diagnostic-device/UNACCEPTED-device-archive.zip > build/ios/diagnostic-device/SHA256.txt
+      - name: Preserve unaccepted diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNACCEPTED-ios-device-diagnostic-${{ github.sha }}
+          path: build/ios/diagnostic-device
+          if-no-files-found: ignore

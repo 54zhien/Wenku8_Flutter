@@ -56,7 +56,8 @@ class PublicSourceExportTest(unittest.TestCase):
         required = ("native_tests/GenerateGBKMap.java", "native_tests/WenkuProtocolTests.swift",
                     ".github/workflows/ios.yml", "docs/IOS.md", "ios/Runner/Resources/gbk-map.bin",
                     "tools/ci_boot_ios_simulator.py", "tools/test_ci_boot_ios_simulator.py",
-                    "tools/select_ios_simulators.py", "tools/test_select_ios_simulators.py")
+                    "tools/select_ios_simulators.py", "tools/test_select_ios_simulators.py",
+                    ".github/workflows/ios-diagnostic.yml", "tools/verify_ios_archive.py", "tools/test_verify_ios_archive.py")
         for name in required:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
