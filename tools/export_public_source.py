@@ -16,6 +16,7 @@ FILES = (
     "tools/configure_ios_ui_tests.rb",
     "tools/ci_boot_ios_simulator.py",
     "tools/test_ci_boot_ios_simulator.py",
+    "tools/wait_ios_test_target.py", "tools/test_wait_ios_test_target.py",
     "tools/select_ios_simulators.py", "tools/test_select_ios_simulators.py",
     ".github/workflows/ios-diagnostic.yml", ".github/workflows/ios-ui-diagnostic.yml",
     "tools/verify_ios_archive.py", "tools/test_verify_ios_archive.py",
