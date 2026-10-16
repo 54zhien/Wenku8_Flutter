@@ -4,6 +4,7 @@
 #import <math.h>
 
 static BOOL InstallAdapter(void);
+static CGFloat AlphaAt(NSDictionary *edge, CGFloat y);
 
 // These selectors belong to the pinned open-source Flutter engine, NOT UIKit
 // private classes. Do not extract CAFilter objects or change blur/tint here.
@@ -41,6 +42,28 @@ BOOL WenkuGaussianProbeClear(UIView *clip) {
   if (!InstallAdapter() || ![clip respondsToSelector:@selector(applyBlurBackdropFilters:)]) return NO;
   [clip applyBlurBackdropFilters:@[]];
   return YES;
+}
+UIVisualEffectView *WenkuGaussianProbePlaneEffect(CGRect frame, CGFloat sigma, CGFloat plateau, BOOL fromBottom) {
+  Class cls = NSClassFromString(@"PlatformViewFilter");
+  if (!InstallAdapter() || ![cls instancesRespondToSelector:
+      @selector(initWithFrame:blurRadius:cornerRadius:visualEffectView:)] ||
+      frame.size.width <= 0 || frame.size.height <= 0 || sigma <= 0) return nil;
+  id<WenkuEngineGaussianFilter> filter = [[cls alloc] initWithFrame:frame blurRadius:sigma cornerRadius:0
+    visualEffectView:[[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleLight]]];
+  if (!filter) return nil;
+  UIVisualEffectView *effect = filter.backdropFilterView;
+  UIView *mask = [[WenkuFeatherMask alloc] initWithFrame:effect.bounds];
+  CAGradientLayer *gradient = (CAGradientLayer *)mask.layer;
+  NSDictionary *edge = @{@"y": @0, @"height": @(frame.size.height), @"plateau": @(plateau), @"fromBottom": @(fromBottom)};
+  NSMutableArray *colors = [NSMutableArray array], *locations = [NSMutableArray array];
+  for (NSInteger i = 0; i < 8; i++) {
+    [colors addObject:(__bridge id)[UIColor colorWithWhite:0 alpha:AlphaAt(edge, frame.size.height * i / 7)].CGColor];
+    [locations addObject:@(i / 7.0)];
+  }
+  gradient.colors = colors; gradient.locations = locations;
+  gradient.startPoint = CGPointMake(.5, 0); gradient.endPoint = CGPointMake(.5, 1);
+  effect.maskView = mask; effect.userInteractionEnabled = NO;
+  return effect;
 }
 #endif
 @implementation WenkuFeatherMask

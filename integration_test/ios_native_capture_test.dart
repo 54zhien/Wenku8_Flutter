@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:wenku8_flutter/ios_glass.dart';
 import 'package:wenku8_flutter/ios_scroll_edge.dart';
+import 'package:wenku8_flutter/app_ui.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +58,7 @@ void main() {
     await tester.pumpAndSettle();
     const diagnostics = MethodChannel('org.mewx.wenku8/glass_presentation');
     await diagnostics.invokeMethod<void>('probeStart');
+    var lastRevision = 0;
     Future<List<int>> sample() async {
       // Submit two actual frames so the Flutter colour and native backdrop
       // have committed, without a wall-clock sleep or a screenshot retry loop.
@@ -70,6 +72,9 @@ void main() {
       expect(result, isNotNull);
       expect(result!['width'], 120);
       expect(result['height'], 80);
+      final revision = result['captureRevision'] as int;
+      expect(revision, greaterThan(lastRevision));
+      lastRevision = revision;
       final pixel = List<int>.from(result['centerPixelBGRA'] as List);
       expect(pixel, hasLength(4));
       expect(pixel[3], 255);
@@ -241,4 +246,281 @@ void main() {
       await saveReports();
     },
   );
+  testWidgets('shared Gaussian plane preserves Metal native and foreground order', (
+    tester,
+  ) async {
+    const diagnostics = MethodChannel('org.mewx.wenku8/glass_presentation');
+    await diagnostics.invokeMethod<void>('probeStart');
+    final state = ValueNotifier((color: const Color(0xFFFF0000), x: 0.0));
+    addTearDown(state.dispose);
+    MethodChannel? plane;
+    MethodChannel? body;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder(
+          valueListenable: state,
+          builder: (_, value, _) => ColoredBox(
+            color: value.color,
+            child: Transform.translate(
+              offset: Offset(value.x, 0),
+              child: Stack(
+                children: [
+                  const Positioned(
+                    left: 10,
+                    top: 200,
+                    width: 48,
+                    height: 180,
+                    child: CustomPaint(painter: _ProbeForegroundPainter()),
+                  ),
+                  Positioned(
+                    left: 80,
+                    top: 200,
+                    width: 128,
+                    height: 180,
+                    child: UiKitView(
+                      viewType: 'org.mewx.wenku8/glass_controls',
+                      creationParams: const {'kind': 'edgeProbe'},
+                      creationParamsCodec: const StandardMessageCodec(),
+                      onPlatformViewCreated: (id) => body = MethodChannel(
+                        'org.mewx.wenku8/glass_controls/$id',
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 200,
+                    height: 180,
+                    child: IgnorePointer(
+                      child: UiKitView(
+                        viewType: 'org.mewx.wenku8/glass_controls',
+                        creationParams: const {'kind': 'sharedEdgeProbe'},
+                        creationParamsCodec: const StandardMessageCodec(),
+                        onPlatformViewCreated: (id) => plane = MethodChannel(
+                          'org.mewx.wenku8/glass_controls/$id',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Positioned(
+                    left: 250,
+                    top: 200,
+                    width: 32,
+                    height: 60,
+                    child: CustomPaint(
+                      key: ValueKey('shared-gaussian-foreground'),
+                      painter: _ProbeForegroundPainter(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.widget<Navigator>(find.byType(Navigator)).clipBehavior,
+      Clip.none,
+    );
+    Future<Map<String, dynamic>> sample() async {
+      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump();
+      expect(plane, isNotNull);
+      final pixels = await plane!.invokeMapMethod<String, dynamic>('snapshot');
+      expect(pixels?['safeAncestors'], true);
+      expect(
+        pixels?['flutterHitThrough'],
+        true,
+        reason:
+            'Actual UIKit hit testing must pass through the complete platform-view wrapper',
+      );
+      final black = List<int>.from(pixels!['foregroundBlackBGRA'] as List);
+      final white = List<int>.from(pixels['foregroundWhiteBGRA'] as List);
+      expect(black[0], lessThan(10));
+      expect(
+        white[0],
+        greaterThan(245),
+        reason: 'Flutter foreground above the Gaussian must remain crisp',
+      );
+      final bodyPixels = await body!.invokeMapMethod<String, dynamic>(
+        'snapshot',
+        const {'probe': true},
+      );
+      expect(bodyPixels?['nativeHitTarget'], true);
+      return {...pixels, 'bodyRows': bodyPixels!['stripeContrastRows']};
+    }
+
+    final red = await sample();
+    final redPixel = List<int>.from(red['backgroundPixelBGRA'] as List);
+    expect(redPixel[2], greaterThan(245));
+    expect(redPixel[0], lessThan(10));
+    expect(redPixel[1], lessThan(10));
+    int metalContrast(Map<String, dynamic> pixels) =>
+        (List<int>.from(pixels['metalBlackBGRA'] as List)[0] -
+                List<int>.from(pixels['metalWhiteBGRA'] as List)[0])
+            .abs();
+    expect(
+      metalContrast(red),
+      lessThan(40),
+      reason:
+          'A patterned Flutter backdrop must actually blur, not merely show through',
+    );
+    for (final key in ['metalBlackBGRA', 'metalWhiteBGRA']) {
+      final pixel = List<int>.from(red[key] as List);
+      expect(pixel[0], inInclusiveRange(60, 210));
+      expect((pixel[0] - pixel[2]).abs(), lessThan(8));
+      expect(pixel[3], 255);
+    }
+    final topRows = (red['bodyRows'] as List)
+        .map((row) => List<int>.from(row as List))
+        .toList();
+    expect(topRows[3][0], lessThan(40));
+    expect(topRows[32][0], greaterThan(225));
+    state.value = (color: const Color(0xFF0000FF), x: 0.0);
+    final blue = await sample();
+    final bluePixel = List<int>.from(blue['backgroundPixelBGRA'] as List);
+    expect(bluePixel[0], greaterThan(245));
+    expect(bluePixel[2], lessThan(10));
+    expect(bluePixel[1], lessThan(10));
+    expect(metalContrast(blue), lessThan(40));
+    state.value = (color: state.value.color, x: 20.0);
+    await sample();
+    state.value = (color: state.value.color, x: -20.0);
+    await sample();
+    state.value = (color: state.value.color, x: 0.0);
+    await plane!.invokeMethod<void>('state', const {'fromBottom': true});
+    final bottom = await sample();
+    final bottomRows = (bottom['bodyRows'] as List)
+        .map((row) => List<int>.from(row as List))
+        .toList();
+    expect(bottomRows[0][0], greaterThan(225));
+    expect(bottomRows[29][0], lessThan(40));
+    expect(
+      metalContrast(bottom),
+      greaterThan(180),
+      reason: 'The same feather must reveal the unblurred Flutter stripes',
+    );
+    final staticCounts = await diagnostics.invokeMapMethod<String, dynamic>(
+      'probeEnd',
+    );
+    expect(staticCounts?['edge_profiles_registered'] ?? 0, 0);
+    expect(
+      staticCounts?['shared_plane_rebuilt'],
+      2,
+      reason:
+          'Colour changes and horizontal movement must not rebuild the Gaussian/mask',
+    );
+    await diagnostics.invokeMethod<void>('probeStart');
+    final context = tester.element(
+      find.byKey(const ValueKey('shared-gaussian-foreground')),
+    );
+    final navigator = Navigator.of(context);
+    MethodChannel? destination;
+    final route = softRoute<void>(
+      ColoredBox(
+        color: const Color(0xFFFFFFFF),
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 200,
+              height: 180,
+              child: IgnorePointer(
+                child: UiKitView(
+                  viewType: 'org.mewx.wenku8/glass_controls',
+                  creationParams: const {'kind': 'sharedEdgeProbe'},
+                  creationParamsCodec: const StandardMessageCodec(),
+                  onPlatformViewCreated: (id) => destination = MethodChannel(
+                    'org.mewx.wenku8/glass_controls/$id',
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    navigator.push(route);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(route.animation!.value, inExclusiveRange(0, 1));
+    await tester.pump();
+    await tester.pump();
+    expect(destination, isNotNull);
+    expect(
+      (await destination!.invokeMapMethod<String, dynamic>(
+        'ancestors',
+      ))?['safeAncestors'],
+      true,
+    );
+    expect(
+      (await plane!.invokeMapMethod<String, dynamic>(
+        'ancestors',
+      ))?['safeAncestors'],
+      true,
+    );
+    await tester.pumpAndSettle();
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(route.animation!.value, inExclusiveRange(0, 1));
+    expect(
+      (await plane!.invokeMapMethod<String, dynamic>(
+        'ancestors',
+      ))?['safeAncestors'],
+      true,
+    );
+    await tester.pumpAndSettle();
+    final restored = await sample();
+    final restoredPixel = List<int>.from(
+      restored['backgroundPixelBGRA'] as List,
+    );
+    expect(restoredPixel[0], greaterThan(245));
+    expect(restoredPixel[2], lessThan(10));
+    expect(restoredPixel[1], lessThan(10));
+    expect(metalContrast(restored), greaterThan(180));
+    final counts = await diagnostics.invokeMapMethod<String, dynamic>(
+      'probeEnd',
+    );
+    expect(counts?['edge_profiles_registered'] ?? 0, 0);
+    expect(
+      counts?['shared_plane_rebuilt'],
+      inInclusiveRange(1, 4),
+      reason:
+          'Route attachment may recreate an effect; route frames must not do so',
+    );
+    reports['shared_plane'] = {
+      'red': red,
+      'blue': blue,
+      'bottom': bottom,
+      'native_work_counts': counts,
+      'static_work_counts': staticCounts,
+    };
+    await saveReports();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+}
+
+class _ProbeForegroundPainter extends CustomPainter {
+  const _ProbeForegroundPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFFFFFFFF),
+    );
+    for (var x = 0.0; x < size.width; x += 4) {
+      canvas.drawRect(
+        Rect.fromLTWH(x, 0, 2, size.height),
+        Paint()..color = const Color(0xFF000000),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ProbeForegroundPainter oldDelegate) => false;
 }

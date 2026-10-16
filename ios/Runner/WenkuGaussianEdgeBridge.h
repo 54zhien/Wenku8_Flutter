@@ -19,6 +19,8 @@ NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT UIView * _Nullable WenkuGaussianProbeClip(CGRect frame);
 FOUNDATION_EXPORT BOOL WenkuGaussianProbeApply(UIView *clip, CGFloat sigma);
 FOUNDATION_EXPORT BOOL WenkuGaussianProbeClear(UIView *clip);
+FOUNDATION_EXPORT UIVisualEffectView * _Nullable WenkuGaussianProbePlaneEffect(
+    CGRect frame, CGFloat sigma, CGFloat plateau, BOOL fromBottom);
 #endif
 
 NS_ASSUME_NONNULL_END

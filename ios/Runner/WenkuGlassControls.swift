@@ -122,6 +122,12 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
   }
   func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
+#if DEBUG
+    if (args as? [String: Any])?["kind"] as? String == "sharedEdgeProbe" {
+      return WenkuSharedGaussianProbeView(frame: frame, id: viewId,
+        messenger: messenger, flutterView: registrar?.viewController?.view)
+    }
+#endif
     let control = WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger, textures: textures)
     edgeBridge.flutterView = registrar?.viewController?.view
     edgeBridge.trackView(control.view())
@@ -141,32 +147,69 @@ private final class WenkuMenuButton: UIButton {
 }
 
 private final class WenkuGlassRoot: UIView {
+  private var captureBounds = CGRect.null
   var layout: (() -> Void)?
   var attached: (() -> Void)?
-  override func layoutSubviews() { super.layoutSubviews(); layout?() }
+#if DEBUG
+  var probeDetached: (() -> Void)?
+#endif
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if captureBounds != bounds { captureBounds = bounds; WenkuWindowCapture.invalidate() }
+    layout?()
+  }
   override func didMoveToWindow() {
-    super.didMoveToWindow(); setNeedsLayout()
+    super.didMoveToWindow(); WenkuWindowCapture.invalidate(); setNeedsLayout()
     if window != nil { attached?() }
+#if DEBUG
+    else { probeDetached?() }
+#endif
   }
 }
 
 /// Apple requires the hosting WINDOW to be captured for visual effects to
 /// appear. Reuse that image for all control requests in the same main-loop
-/// batch, then release it before the loop sleeps; no timer or idle ticker.
+/// batch. Expire before sleep or at the next display callback, with a maximum
+/// age check if that callback is delayed. The callback is one-shot, never idle.
+private struct WenkuWindowImage {
+  let window: UIWindow
+  let bounds: CGRect
+  let image: CGImage?
+  let revision: Int
+  let expiresAt: CFTimeInterval
+}
+private final class WenkuCaptureFrameExpiry: NSObject {
+  private var link: CADisplayLink?
+  init(expired: @escaping () -> Void) {
+    self.expired = expired
+    super.init()
+    let link = CADisplayLink(target: self, selector: #selector(tick))
+    self.link = link
+    link.add(to: .main, forMode: .common)
+  }
+  private let expired: () -> Void
+  func invalidate() { link?.invalidate(); link = nil }
+  @objc private func tick() { invalidate(); expired() }
+}
 private enum WenkuWindowCapture {
   // Cache failed attempts as well: an incomplete Metal/window render must not
   // trigger the same full-window readback separately for every control.
-  static var images: [ObjectIdentifier: (window: UIWindow, bounds: CGRect, image: CGImage?)] = [:]
+  static var images: [ObjectIdentifier: WenkuWindowImage] = [:]
   static var observer: CFRunLoopObserver?
-  static func image(_ window: UIWindow) -> CGImage? {
+  static var frameExpiry: WenkuCaptureFrameExpiry?
+  static var revision = 0
+  static func invalidate() {
+    images.removeAll()
+    if let observer { CFRunLoopObserverInvalidate(observer) }
+    observer = nil
+    frameExpiry?.invalidate(); frameExpiry = nil
+  }
+  static func image(_ window: UIWindow) -> WenkuWindowImage? {
     let key = ObjectIdentifier(window)
-    if let cached = images[key], cached.bounds == window.bounds { return cached.image }
+    if let cached = images[key], cached.bounds == window.bounds,
+      CACurrentMediaTime() < cached.expiresAt { return cached }
+    if images[key] != nil { invalidate() }
     guard window.bounds.width > 0, window.bounds.height > 0 else { return nil }
-    if observer == nil {
-      observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue,
-        false, 0) { _, _ in images.removeAll(); observer = nil }
-      CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
-    }
     let format = UIGraphicsImageRendererFormat()
     format.opaque = false; format.preferredRange = .standard
     format.scale = min(window.traitCollection.displayScale,
@@ -179,8 +222,24 @@ private enum WenkuWindowCapture {
     }
     WenkuGlassWork.add("window_snapshots")
     let cg = rendered ? image.cgImage : nil
-    images[key] = (window, window.bounds, cg)
-    return cg
+    revision += 1
+    // Bound age from capture START, so a slow synchronous window readback
+    // cannot extend the lifetime while blocking the expiry callback itself.
+    let maximumFPS = max(1, window.windowScene?.screen.maximumFramesPerSecond ?? 60)
+    let captured = WenkuWindowImage(window: window, bounds: window.bounds, image: cg,
+      revision: revision, expiresAt: started + 1 / Double(maximumFPS))
+    images[key] = captured
+    // drawHierarchy(afterScreenUpdates:) can run a nested run loop. Arm only
+    // AFTER storing the frame, otherwise the observer can fire during capture
+    // and leave the newly stored image without any expiry mechanism.
+    if observer == nil {
+      observer = CFRunLoopObserverCreateWithHandler(nil,
+        CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue,
+        false, 0) { _, _ in invalidate() }
+      CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+      frameExpiry = WenkuCaptureFrameExpiry { invalidate() }
+    }
+    return captured
   }
 }
 
@@ -189,6 +248,9 @@ private enum WenkuWindowCapture {
 final class WenkuControlTexture: NSObject, FlutterTexture {
   private let lock = NSLock()
   private var pixels: CVPixelBuffer?
+#if DEBUG
+  private(set) var probeCaptureRevision = 0
+#endif
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
     lock.lock(); defer { lock.unlock() }
     return pixels.map { Unmanaged.passRetained($0) }
@@ -204,7 +266,10 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
     // Keep these few controls live under the ONE native Gaussian instead.
     guard allowExternalBlur || !WenkuGaussianEdgeBridge.viewHasExternalFilter(view) else { return false }
     view.layoutIfNeeded()
-    guard let image = WenkuWindowCapture.image(window) else { return false }
+    guard let captured = WenkuWindowCapture.image(window), let image = captured.image else { return false }
+#if DEBUG
+    probeCaptureRevision = captured.revision
+#endif
     let windowScale = CGFloat(image.width) / window.bounds.width
     let rect = view.convert(view.bounds, to: window).offsetBy(dx: -window.bounds.minX, dy: -window.bounds.minY)
     let source = CGRect(x: rect.minX * windowScale, y: rect.minY * windowScale,
@@ -238,6 +303,18 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
     return true
   }
 #if DEBUG
+  func probePixelBGRA(x: CGFloat, y: CGFloat) -> [UInt8]? {
+    guard x.isFinite, y.isFinite, (0...1).contains(x), (0...1).contains(y),
+      let buffer = copyPixelBuffer()?.takeRetainedValue(),
+      CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else { return nil }
+    defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+    guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+    let px = min(CVPixelBufferGetWidth(buffer) - 1, Int(x * CGFloat(CVPixelBufferGetWidth(buffer))))
+    let py = min(CVPixelBufferGetHeight(buffer) - 1, Int(y * CGFloat(CVPixelBufferGetHeight(buffer))))
+    let index = py * CVPixelBufferGetBytesPerRow(buffer) + px * 4
+    let bytes = base.assumingMemoryBound(to: UInt8.self).advanced(by: index)
+    return Array(UnsafeBufferPointer(start: bytes, count: 4))
+  }
   /// Read only a fixed diagnostic sample from test-generated colour patterns.
   func centerPixelBGRA() -> [UInt8]? {
     guard let buffer = copyPixelBuffer()?.takeRetainedValue(),
@@ -271,6 +348,96 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
   }
 #endif
 }
+
+#if DEBUG
+/// Isolated full-width Gaussian experiment. Not selected by application widgets.
+/// Tests verify Metal/native painter order and the REAL wrapper hit path before
+/// considering this plane for production. No ancestor-mask hook is installed.
+private final class WenkuSharedGaussianProbeView: NSObject, FlutterPlatformView {
+  private let root: WenkuGlassRoot
+  private let channel: FlutterMethodChannel
+  private weak var flutterView: UIView?
+  private var surface: UIVisualEffectView?
+  private var lastSize = CGSize.zero
+  private var bottom = false
+  private var renderedBottom = false
+  private var safeAncestors = false
+
+  init(frame: CGRect, id: Int64, messenger: FlutterBinaryMessenger, flutterView: UIView?) {
+    root = WenkuGlassRoot(frame: frame)
+    channel = FlutterMethodChannel(name: "org.mewx.wenku8/glass_controls/\(id)", binaryMessenger: messenger)
+    self.flutterView = flutterView
+    super.init()
+    root.backgroundColor = .clear; root.isUserInteractionEnabled = false
+    root.layout = { [weak self] in self?.refresh() }
+    root.attached = { [weak self] in self?.refresh() }
+    root.probeDetached = { [weak self] in
+      self?.surface?.removeFromSuperview(); self?.surface = nil; self?.lastSize = .zero
+    }
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self else { result(nil); return }
+      if call.method == "state", let state = call.arguments as? [String: Any] {
+        self.bottom = state["fromBottom"] as? Bool == true
+        self.refresh(); result(nil); return
+      }
+      if call.method == "ancestors" {
+        self.refresh(); result(["safeAncestors": self.safeAncestors]); return
+      }
+      guard call.method == "snapshot" else { result(FlutterMethodNotImplemented); return }
+      self.refresh()
+      let texture = WenkuControlTexture()
+      guard self.surface != nil, self.safeAncestors,
+        texture.capture(self.root, allowExternalBlur: true) else {
+        result(["safeAncestors": self.safeAncestors]); return
+      }
+      let point = self.root.convert(CGPoint(x: 30, y: 30), to: self.root.window)
+      let hit = self.root.window?.hitTest(point, with: nil)
+      guard let background = texture.probePixelBGRA(x: 0.8, y: 0.2),
+        let metalBlack = texture.probePixelBGRA(x: 30.5 / self.root.bounds.width, y: 30 / self.root.bounds.height),
+        let metalWhite = texture.probePixelBGRA(x: 32.5 / self.root.bounds.width, y: 30 / self.root.bounds.height),
+        let black = texture.probePixelBGRA(x: 250.5 / self.root.bounds.width, y: 30 / self.root.bounds.height),
+        let white = texture.probePixelBGRA(x: 252.5 / self.root.bounds.width, y: 30 / self.root.bounds.height) else {
+        result(FlutterError(code: "PROBE_PIXELS", message: "Fixed Gaussian probe pixels unavailable", details: nil)); return
+      }
+      result(["safeAncestors": self.safeAncestors,
+        "flutterHitThrough": hit === self.flutterView,
+        "backgroundPixelBGRA": background,
+        "metalBlackBGRA": metalBlack,
+        "metalWhiteBGRA": metalWhite,
+        "foregroundBlackBGRA": black,
+        "foregroundWhiteBGRA": white])
+    }
+  }
+  deinit { channel.setMethodCallHandler(nil) }
+  func view() -> UIView { root }
+  private func refresh() {
+    guard root.window != nil, let flutterView, root.bounds.width > 0, root.bounds.height > 0,
+      let interceptor = root.superview, let clip = interceptor.superview,
+      NSStringFromClass(type(of: interceptor)) == "FlutterTouchInterceptingView",
+      NSStringFromClass(type(of: clip)) == "ChildClippingView" else { safeAncestors = false; return }
+    interceptor.isUserInteractionEnabled = false; clip.isUserInteractionEnabled = false
+    var ancestor: UIView? = root
+    var reachedFlutter = false
+    safeAncestors = true
+    while let view = ancestor {
+      if view.mask != nil || view.alpha != 1 { safeAncestors = false }
+      if view === flutterView { reachedFlutter = true; break }
+      ancestor = view.superview
+    }
+    safeAncestors = safeAncestors && reachedFlutter
+    guard safeAncestors else { surface?.removeFromSuperview(); surface = nil; return }
+    if surface != nil, root.bounds.size == lastSize, bottom == renderedBottom { return }
+    surface?.removeFromSuperview()
+    surface = WenkuGaussianProbePlaneEffect(root.bounds, bottom ? 8.01 : 8, 60, bottom)
+    if let surface {
+      root.addSubview(surface)
+      if let mask = surface.mask { surface.mask = nil; surface.mask = mask }
+      WenkuGlassWork.add("shared_plane_rebuilt")
+    }
+    lastSize = root.bounds.size; renderedBottom = bottom
+  }
+}
+#endif
 
 private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureRecognizerDelegate, UITabBarControllerDelegate {
   private let root: WenkuGlassRoot
@@ -325,6 +492,7 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
         var response: [String: Any] = ["textureId": id, "width": self.root.bounds.width, "height": self.root.bounds.height]
 #if DEBUG
         if (call.arguments as? [String: Any])?["probe"] as? Bool == true {
+          response["captureRevision"] = texture.probeCaptureRevision
           response["centerPixelBGRA"] = texture.centerPixelBGRA()
           if self.state["kind"] as? String == "edgeProbe" {
             response["stripeContrastRows"] = texture.stripeContrastRows()
@@ -503,6 +671,7 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
   }
 
   private func update(_ args: [String: Any]) {
+    WenkuWindowCapture.invalidate()
     WenkuGlassWork.add("state_updates")
     let previousOpaque = state["opaque"] as? Bool == true
     state = args

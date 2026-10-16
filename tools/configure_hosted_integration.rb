@@ -3,12 +3,13 @@
 require 'xcodeproj'
 
 mode = ARGV.fetch(0)
-counts = { 'capture' => 2, 'motion' => 1 }
+counts = { 'capture' => 3, 'motion' => 1 }
 abort 'Expected capture or motion' unless counts.key?(mode)
 names = {
   'capture' => ['native glass texture tracks changing Flutter Metal content',
-                'real platform controls retain Gaussian feather and native hit targets'],
-  'motion' => ['record the same real book and search transitions']
+                'real platform controls retain Gaussian feather and native hit targets',
+                'shared Gaussian plane preserves Metal native and foreground order'],
+  'motion' => ['record the same real book search and settings transitions']
 }
 expected_names = names.fetch(mode).map { |name| '@' + name.dump }.join(', ')
 report = mode == 'motion' ? 'wenku-motion-benchmark.json' : 'wenku-native-capture-probe.json'

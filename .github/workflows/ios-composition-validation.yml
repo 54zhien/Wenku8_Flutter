@@ -48,11 +48,14 @@ jobs:
               output.write('COMPOSITION_TEST_UDID=' + phones[0]['udid'] + '\n')
           PY
       - name: Execute hosted native capture and protocol tests
+        id: native_tests
         run: |
           set -euo pipefail
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests -resultBundlePath build/composition/native-capture.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/composition/native-capture.log
       - name: Execute the actual Flutter pixel assertions through XCTest
         id: pixel_probe
+        # Preserve native failures while collecting independent graphics evidence.
+        if: ${{ !cancelled() && steps.native_tests.outcome != 'skipped' }}
         timeout-minutes: 8
         run: |
           set -euo pipefail
@@ -74,6 +77,7 @@ jobs:
           baseline_root="$RUNNER_TEMP/wenku-delivered-composition"
           git fetch --depth=1 origin 7bfd1edab5fbb7720173c88b06d30bf064ac54e7
           git worktree add --detach "$baseline_root" FETCH_HEAD
+          cp integration_test/ios_motion_benchmark_test.dart "$baseline_root/integration_test/ios_motion_benchmark_test.dart"
           cmp integration_test/ios_motion_benchmark_test.dart "$baseline_root/integration_test/ios_motion_benchmark_test.dart"
           for variant in before edge_only after; do
             if [ "$variant" = before ]; then cd "$baseline_root"; else cd "$candidate_root"; fi
@@ -103,7 +107,7 @@ jobs:
               assert len(records) == 1, f'Missing or duplicate actual timing attachment: {variant}'
               reports[variant] = records[0]
               assert reports[variant]['mode'] == 'debug'
-              assert len(reports[variant]['scenes']) == 2
+              assert set(reports[variant]['scenes']) == {'book_open_and_return_warm', 'search_open_and_close', 'settings_history_open_and_return_warm'}
           assert reports['before']['physical_size'] == reports['after']['physical_size']
           assert reports['before']['physical_size'] == reports['edge_only']['physical_size']
           comparison = {'scope': 'same iOS 26.2 simulator debug scenes through native-hosted integration_test; not release FPS or physical-device acceptance', 'before_sha': '7bfd1edab5fbb7720173c88b06d30bf064ac54e7', 'scenes': {}}

@@ -14,6 +14,8 @@ import 'package:wenku8_flutter/library_state.dart';
 import 'package:wenku8_flutter/main.dart';
 import 'package:wenku8_flutter/native_effects.dart';
 import 'package:wenku8_flutter/pages.dart';
+import 'package:wenku8_flutter/ios_glass.dart';
+import 'package:wenku8_flutter/reading_history.dart';
 import '../test/support/cover_fixture.dart';
 import '../test/support/offline_fixture.dart';
 
@@ -22,7 +24,7 @@ void main() {
   // Let animation tickers request every vsync between test actions. The live
   // binding's default policy otherwise suppresses frames between explicit pumps.
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
-  testWidgets('record the same real book and search transitions', (
+  testWidgets('record the same real book search and settings transitions', (
     tester,
   ) async {
     final previousHitTestPolicy = WidgetController.hitTestWarningShouldBeFatal;
@@ -169,6 +171,54 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('inline-search-close')));
         await tester.pumpAndSettle();
         expect(find.byType(InlineSearchResults), findsNothing);
+      }
+    });
+    if (nativeIOSGlassEnabled) {
+      tester
+          .widget<IOSGlassControl>(
+            find.byWidgetPredicate(
+              (widget) => widget is IOSGlassControl && widget.kind == 'tabbar',
+            ),
+          )
+          .onAction({'index': 2});
+    } else {
+      final tab = find.byKey(const ValueKey('dock-tab-2'));
+      final detector = find
+          .ancestor(of: tab, matching: find.byType(GestureDetector))
+          .first;
+      final point = tester.getRect(tab).center;
+      expect(
+        tester.hitTestOnBinding(point).path.map((hit) => hit.target),
+        contains(tester.renderObject(detector)),
+      );
+      await tester.tapAt(point);
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsPage), findsOneWidget);
+    await Scrollable.ensureVisible(
+      tester.element(find.text('阅读历史')),
+      alignment: .5,
+    );
+    await tester.pumpAndSettle();
+    await record('settings_history_open_and_return_warm', () async {
+      for (var repeat = 0; repeat < 5; repeat++) {
+        expect(find.byType(ReadingHistoryPage), findsNothing);
+        await tester.tap(find.text('阅读历史'));
+        await tester.pump();
+        final page = find.byType(ReadingHistoryPage);
+        expect(page, findsOneWidget);
+        final route = ModalRoute.of(tester.element(page))!;
+        expect(route.transitionDuration, const Duration(milliseconds: 420));
+        expect(
+          route.reverseTransitionDuration,
+          const Duration(milliseconds: 320),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.getTopLeft(page).dx, closeTo(0, .001));
+        Navigator.of(tester.element(page)).pop();
+        await tester.pumpAndSettle();
+        expect(page, findsNothing);
+        expect(find.byType(SettingsPage), findsOneWidget);
       }
     });
     final report = {

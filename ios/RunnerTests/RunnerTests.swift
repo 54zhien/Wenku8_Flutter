@@ -83,12 +83,16 @@ final class RunnerTests: XCTestCase {
     clip.addSubview(button)
     controller.view.addSubview(clip)
     XCTAssertTrue(access.apply(clip, sigma: 8))
+    var lastCaptureRevision = 0
     func contrasts() async throws -> [Int] {
       await withCheckedContinuation { continuation in
         CaptureDisplayFrames.wait(2) { continuation.resume() }
       }
       let texture = WenkuControlTexture()
       XCTAssertTrue(texture.capture(clip, allowExternalBlur: true))
+      XCTAssertGreaterThan(texture.probeCaptureRevision, lastCaptureRevision,
+        "Two submitted display callbacks must not reuse an older window image")
+      lastCaptureRevision = texture.probeCaptureRevision
       let buffer = try XCTUnwrap(texture.copyPixelBuffer()).takeRetainedValue()
       XCTAssertEqual(CVPixelBufferLockBaseAddress(buffer, .readOnly), kCVReturnSuccess)
       defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
