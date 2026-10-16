@@ -86,7 +86,7 @@ def main():
         run('devices-after', ['xcrun', 'simctl', 'list', 'devices', '--json'], 10, False)
         run('processes', ['ps', '-axo', 'pid,ppid,state,etime,pcpu,comm'], 5, False)
         run('simulator-service', ['log', 'show', '--last', '5m', '--style', 'compact',
-             '--predicate', 'process == "CoreSimulatorService" OR process == "Simulator"'],
+             '--predicate', 'process == "CoreSimulatorService" OR process == "Simulator" OR process == "simdiskimaged" OR eventMessage CONTAINS "simdiskimaged"'],
              10, False)
     return status
 

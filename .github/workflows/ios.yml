@@ -3,23 +3,23 @@ name: iOS 26 candidate
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'integration_test/ios_motion_benchmark_test.dart', 'tools/ci_boot_ios_simulator.py', 'tools/test_ci_boot_ios_simulator.py', 'tools/configure_ios_ui_tests.rb', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
+    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'integration_test/ios_motion_benchmark_test.dart', 'tools/ci_boot_ios_simulator.py', 'tools/test_ci_boot_ios_simulator.py', 'tools/configure_ios_ui_tests.rb', 'tools/select_ios_simulators.py', 'tools/test_select_ios_simulators.py', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
   push:
     branches: ['codex/ios26-port']
-    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'integration_test/ios_motion_benchmark_test.dart', 'tools/ci_boot_ios_simulator.py', 'tools/test_ci_boot_ios_simulator.py', 'tools/configure_ios_ui_tests.rb', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
+    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'integration_test/ios_motion_benchmark_test.dart', 'tools/ci_boot_ios_simulator.py', 'tools/test_ci_boot_ios_simulator.py', 'tools/configure_ios_ui_tests.rb', 'tools/select_ios_simulators.py', 'tools/test_select_ios_simulators.py', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
 
 permissions:
   contents: read
 
 jobs:
   performance:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.4.1'
       - name: Initialize display before simulator discovery
         timeout-minutes: 2
         run: python3 tools/ci_boot_ios_simulator.py --initialize build/motion/diagnostics/startup
@@ -35,19 +35,8 @@ jobs:
           set -euo pipefail
           xcodebuild -version
           xcrun simctl list devices available --json > "$RUNNER_TEMP/motion-devices.json"
-          simulator=$(python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'motion-devices.json').read_text())
-          devices = [device for runtime, entries in data['devices'].items()
-                     if '.iOS-' in runtime and int(runtime.split('.iOS-')[1].split('-')[0]) >= 26
-                     for device in entries if device['name'] == 'iPhone 17 Pro' and device['isAvailable']]
-          if not devices:
-              raise SystemExit('No supported motion comparison simulator')
-          print(devices[0]['udid'])
-          PY
-          )
-          echo "udid=$simulator" >> "$GITHUB_OUTPUT"
+          python3 tools/select_ios_simulators.py --role motion --inventory "$RUNNER_TEMP/motion-devices.json" --output "$GITHUB_OUTPUT" --evidence build/motion/diagnostics/selection.json
+          simulator=$(python3 -c 'import json; print(json.load(open("build/motion/diagnostics/selection.json"))["udid"])')
           python3 tools/ci_boot_ios_simulator.py "$simulator" build/motion/diagnostics/phone
       - name: Compile and measure release AOT paper kernel
         run: |
@@ -107,13 +96,13 @@ jobs:
           path: build/motion
           if-no-files-found: ignore
   ios:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.4.1'
       - name: Initialize display before simulator discovery
         timeout-minutes: 2
         run: python3 tools/ci_boot_ios_simulator.py --initialize build/ios/diagnostics/startup
@@ -130,28 +119,7 @@ jobs:
           set -euo pipefail
           xcodebuild -version
           xcrun simctl list devices available --json > "$RUNNER_TEMP/ios-devices.json"
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'ios-devices.json').read_text())
-          candidates = [device for runtime, devices in data['devices'].items()
-                        if '.iOS-' in runtime and int(runtime.split('.iOS-')[1].split('-')[0]) >= 26
-                        for device in devices if device['isAvailable'] and device['name'].startswith('iPhone')]
-          if not candidates:
-              raise SystemExit('No iOS 26+ iPhone simulator is installed')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('udid=' + candidates[0]['udid'] + '\n')
-              small = next((item for item in candidates if item['name'] == 'iPhone SE (3rd generation)'), None)
-              if small is None:
-                  raise SystemExit('No small iOS 26+ iPhone simulator is installed')
-              output.write('small_udid=' + small['udid'] + '\n')
-              pad = next((device for runtime, devices in data['devices'].items()
-                          if '.iOS-' in runtime and int(runtime.split('.iOS-')[1].split('-')[0]) >= 26
-                          for device in devices if device['isAvailable'] and device['name'].startswith('iPad Pro 11-inch')), None)
-              if pad is None:
-                  raise SystemExit('No iPadOS 26+ simulator is installed')
-              output.write('pad_udid=' + pad['udid'] + '\n')
-          PY
+          python3 tools/select_ios_simulators.py --role interface --inventory "$RUNNER_TEMP/ios-devices.json" --output "$GITHUB_OUTPUT" --evidence build/ios/diagnostics/selection.json
       - name: Boot display session before build work
         timeout-minutes: 8
         run: python3 tools/ci_boot_ios_simulator.py '${{ steps.simulator.outputs.udid }}' build/ios/diagnostics/large
@@ -254,13 +222,13 @@ jobs:
           if-no-files-found: ignore
   package:
     needs: [performance, ios]
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.4.1'
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.5'
