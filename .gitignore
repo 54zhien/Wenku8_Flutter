@@ -129,3 +129,4 @@ key.properties
 !/tools/verify_apk_runtime.py
 !/tools/test_verify_apk_runtime.py
 !/tools/configure_ios_ui_tests.rb
+!/tools/ci_boot_ios_simulator.py

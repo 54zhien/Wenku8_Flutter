@@ -146,6 +146,9 @@ jobs:
                   raise SystemExit('No iPadOS 26+ simulator is installed')
               output.write('pad_udid=' + pad['udid'] + '\n')
           PY
+      - name: Boot display session before build work
+        timeout-minutes: 8
+        run: python3 tools/ci_boot_ios_simulator.py '${{ steps.simulator.outputs.udid }}' build/ios/diagnostics/large
       - run: python3 tools/check_public_source.py
       - run: flutter pub get
       - run: flutter analyze --no-pub
@@ -158,16 +161,6 @@ jobs:
           "$RUNNER_TEMP/wenku-protocol-tests"
       - name: Compile native-glass simulator candidate
         run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
-      - name: Boot selected test simulator
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          simulator='${{ steps.simulator.outputs.udid }}'
-          xcrun simctl boot "$simulator"
-          xcrun simctl bootstatus "$simulator" -b
-          mkdir -p build/ios/diagnostics
-          xcrun simctl list devices --json > build/ios/diagnostics/devices-before-tests.json
-          xcrun simctl io "$simulator" screenshot build/ios/diagnostics/before-tests.png
       - name: Run native iOS tests
         timeout-minutes: 15
         run: |
@@ -199,8 +192,7 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
-          xcrun simctl boot '${{ steps.simulator.outputs.small_udid }}'
-          xcrun simctl bootstatus '${{ steps.simulator.outputs.small_udid }}' -b
+          python3 tools/ci_boot_ios_simulator.py '${{ steps.simulator.outputs.small_udid }}' build/ios/diagnostics/small --shutdown '${{ steps.simulator.outputs.udid }}'
           xcrun simctl ui '${{ steps.simulator.outputs.small_udid }}' appearance dark
       - name: Test small iPhone in dark appearance
         timeout-minutes: 12
@@ -211,8 +203,7 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
-          xcrun simctl boot '${{ steps.simulator.outputs.pad_udid }}'
-          xcrun simctl bootstatus '${{ steps.simulator.outputs.pad_udid }}' -b
+          python3 tools/ci_boot_ios_simulator.py '${{ steps.simulator.outputs.pad_udid }}' build/ios/diagnostics/pad --shutdown '${{ steps.simulator.outputs.small_udid }}'
           xcrun simctl ui '${{ steps.simulator.outputs.pad_udid }}' appearance light
       - name: Test iPad system placement
         timeout-minutes: 12
