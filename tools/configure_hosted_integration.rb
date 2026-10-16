@@ -35,6 +35,9 @@ source = <<~OBJC
       if (remaining <= 0) break;
       [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:MIN(1.0, remaining)]];
     }
+    BOOL withinBudget = NSProcessInfo.processInfo.systemUptime < deadline;
+    XCTAssertTrue(withinBudget, @"Native-hosted Dart results exceeded the 240-second execution budget");
+    if (!withinBudget) return;
     NSDictionary *results = plugin.testResults;
     XCTAssertNotNil(results, @"Dart integration never reported results within its execution budget");
     if (!results) return;
