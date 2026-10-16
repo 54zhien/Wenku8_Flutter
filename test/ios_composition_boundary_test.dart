@@ -102,6 +102,38 @@ void main() {
     },
   );
 
+  nativeTest(
+    'viewport changes invalidate a crop even when the control size stays fixed',
+    (tester) async {
+      Widget page(double width) => MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(size: Size(width, 600)),
+          child: Atmosphere(
+            child: Center(child: control(const ValueKey('viewport-control'))),
+          ),
+        ),
+      );
+      await tester.pumpWidget(page(400));
+      await tester.pumpAndSettle();
+      expect(captures, 1);
+      final size = tester.getSize(
+        find.byKey(const ValueKey('viewport-control')),
+      );
+      await tester.pumpWidget(page(500));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const ValueKey('viewport-control'))),
+        size,
+      );
+      expect(
+        captures,
+        2,
+        reason:
+            'A new viewport changes the native backdrop even when native configuration and control bounds stay the same',
+      );
+    },
+  );
+
   nativeTest('a stale asynchronous capture cannot replace the current state', (
     tester,
   ) async {

@@ -34,7 +34,7 @@ final class RunnerTests: XCTestCase {
         CaptureDisplayFrames.wait(2) { continuation.resume() }
       }
       let texture = WenkuControlTexture()
-      XCTAssertTrue(texture.capture(clip))
+      XCTAssertTrue(texture.capture(clip, allowExternalBlur: true))
       let buffer = try XCTUnwrap(texture.copyPixelBuffer()).takeRetainedValue()
       XCTAssertEqual(CVPixelBufferLockBaseAddress(buffer, .readOnly), kCVReturnSuccess)
       defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
@@ -66,6 +66,8 @@ final class RunnerTests: XCTestCase {
     XCTAssertTrue(access.apply(clip, sigma: 8), "First composition occurs before native insertion")
     XCTAssertEqual(access.maskCount, 1)
     controller.view.addSubview(clip)
+    XCTAssertFalse(WenkuControlTexture().capture(clip),
+                   "A normal route snapshot must refuse a Gaussian already baked into its crop")
     let top = try await contrasts()
     XCTAssertLessThan(top[top.count / 10], 35)
     XCTAssertGreaterThan(top[top.count * 98 / 100], 225)

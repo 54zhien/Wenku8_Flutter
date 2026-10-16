@@ -133,6 +133,14 @@ static CGFloat AlphaAt(NSDictionary *edge, CGFloat y) {
   return self;
 }
 - (BOOL)compatible { return InstallAdapter(); }
++ (BOOL)viewHasExternalFilter:(UIView *)view {
+  for (WenkuGaussianEdgeBridge *bridge in bridges) {
+    for (UIView *clip in bridge.clips) {
+      if ([view isDescendantOfView:clip] && [bridge.clips objectForKey:clip].count > 0) return YES;
+    }
+  }
+  return NO;
+}
 - (void)trackView:(UIView *)view { [self.trackedViews addObject:view]; }
 - (BOOL)owns:(UIView *)clip {
   if (!self.flutterView) return NO;
@@ -218,7 +226,7 @@ static CGFloat AlphaAt(NSDictionary *edge, CGFloat y) {
         objc_setAssociatedObject(effect, &maskViewKey, mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(effect, &originalHitKey, @(effect.userInteractionEnabled), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
       }
-      NSDictionary *key = @{@"rejected": @YES, @"rect": [NSValue valueWithCGRect:rect]};
+      NSDictionary *key = @{@"rejected": @YES, @"y": @(rect.origin.y), @"bounds": [NSValue valueWithCGRect:effect.bounds]};
       if (![previous isEqual:key]) {
         ((CAGradientLayer *)mask.layer).colors = @[(__bridge id)UIColor.clearColor.CGColor, (__bridge id)UIColor.clearColor.CGColor];
         ((CAGradientLayer *)mask.layer).locations = @[@0, @1];
@@ -239,7 +247,7 @@ static CGFloat AlphaAt(NSDictionary *edge, CGFloat y) {
       }
       continue;
     }
-    NSDictionary *key = @{@"edge": chosen, @"rect": [NSValue valueWithCGRect:rect],
+    NSDictionary *key = @{@"edge": chosen, @"y": @(rect.origin.y),
                           @"bounds": [NSValue valueWithCGRect:effect.bounds]};
     if ([previous isEqual:key]) continue;
     WenkuFeatherMask *mask = objc_getAssociatedObject(effect, &maskViewKey);

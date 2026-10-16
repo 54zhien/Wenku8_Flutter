@@ -84,6 +84,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   final _pointers = <int>{};
   int _generation = 0, _captureAttempts = 0;
   bool _captureNeeded = true, _captureQueued = false, _capturing = false;
+  Object? _viewport;
 
   void _invalidateCapture() {
     _generation++;
@@ -248,6 +249,19 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final media = MediaQuery.maybeOf(context);
+    final viewport = media == null
+        ? null
+        : (
+            media.size,
+            media.viewPadding,
+            media.viewInsets,
+            media.devicePixelRatio,
+          );
+    if (_viewport != viewport) {
+      _viewport = viewport;
+      _invalidateCapture();
+    }
     final scene = IOSNativeComposition.maybeOf(context);
     if (scene != _scene) {
       _scene?.removeListener(_compositionChanged);

@@ -68,7 +68,26 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
-          flutter test --no-pub integration_test/ios_native_capture_test.dart -d "$COMPOSITION_TEST_UDID" --dart-define=WENKU8_NATIVE_GLASS=true --reporter expanded 2>&1 | tee build/composition/flutter-native-capture.log
+          flutter test --verbose --no-pub integration_test/ios_native_capture_test.dart -d "$COMPOSITION_TEST_UDID" --dart-define=WENKU8_NATIVE_GLASS=true --reporter expanded 2>&1 | tee build/composition/flutter-native-capture.log
+      - name: Preserve bounded integration startup diagnostics
+        if: ${{ always() && steps.integration_boot.outcome == 'success' }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          root = Path('build/composition')
+          commands = {
+              'integration-processes': ['ps', '-axo', 'pid,ppid,state,etime,pcpu,comm'],
+              'integration-runtime': ['xcrun', 'simctl', 'spawn', os.environ['COMPOSITION_TEST_UDID'], 'log', 'show', '--last', '3m', '--style', 'compact', '--predicate', 'process == "Runner" OR eventMessage CONTAINS "Flutter"'],
+          }
+          for name, command in commands.items():
+              with (root / f'{name}.txt').open('wb') as log:
+                  try:
+                      result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=15, check=False)
+                      print(name, result.returncode)
+                  except subprocess.TimeoutExpired:
+                      print(name, 'diagnostic timeout; original test outcome unchanged')
+          PY
       - name: Measure the delivered and candidate composition paths on the same simulator
         if: ${{ !cancelled() && steps.integration_boot.outcome == 'success' }}
         timeout-minutes: 20

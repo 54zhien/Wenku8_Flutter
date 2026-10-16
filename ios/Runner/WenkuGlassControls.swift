@@ -192,12 +192,16 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
     lock.lock(); defer { lock.unlock() }
     return pixels.map { Unmanaged.passRetained($0) }
   }
-  func capture(_ view: UIView) -> Bool {
+  func capture(_ view: UIView, allowExternalBlur: Bool = false) -> Bool {
     let started = CACurrentMediaTime()
     defer { WenkuGlassWork.captureDuration(started) }
     guard Thread.isMainThread, let window = view.window,
       view.bounds.width.isFinite, view.bounds.height.isFinite,
       view.bounds.width > 0, view.bounds.height > 0 else { return false }
+    // A window crop under an external edge already contains its Gaussian.
+    // Filtering that texture in Flutter during motion would blur it twice.
+    // Keep these few controls live under the ONE native Gaussian instead.
+    guard allowExternalBlur || !WenkuGaussianEdgeBridge.viewHasExternalFilter(view) else { return false }
     view.layoutIfNeeded()
     guard let image = WenkuWindowCapture.image(window) else { return false }
     let windowScale = CGFloat(image.width) / window.bounds.width
@@ -301,9 +305,17 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
       else if call.method == "snapshot" {
         guard self.slider?.isTracking != true, self.toggle?.isTracking != true,
           !self.buttons.contains(where: { $0.isTracking }) else { result(nil); return }
+        var probe = false
+#if DEBUG
+        probe = (call.arguments as? [String: Any])?["probe"] as? Bool == true
+#endif
+        if !probe && WenkuGaussianEdgeBridge.viewHasExternalFilter(self.root) {
+          WenkuGlassWork.add("edge_snapshots_refused")
+          result(["underEdge": true]); return
+        }
         let texture = self.controlTexture ?? WenkuControlTexture()
         WenkuGlassWork.add("snapshot_requests")
-        guard texture.capture(self.root) else { result(nil); return }
+        guard texture.capture(self.root, allowExternalBlur: probe) else { result(nil); return }
         self.controlTexture = texture
         let id = self.textureId ?? self.textures.register(texture)
         self.textureId = id

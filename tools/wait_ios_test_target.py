@@ -4,7 +4,7 @@ The five-minute workflow budget includes teardown, one boot, and bootstatus.
 No reset, second boot attempt, or substitute device is permitted.
 """
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import time
@@ -16,12 +16,23 @@ def boot_target(udid, output, *, run=subprocess.run, now=time.monotonic,
     history = []
     output.mkdir(parents=True, exist_ok=True)
 
-    def command(arguments):
+    def command(arguments, *, label=None, limit=None):
         remaining = deadline - now()
         if remaining <= 0:
             raise TimeoutError('Integration target exhausted its original boot budget')
-        return run(arguments, check=True, capture_output=True, text=True,
-                   timeout=remaining).stdout
+        try:
+            result = run(arguments, check=True, capture_output=True, text=True,
+                         timeout=min(remaining, limit) if limit else remaining)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            if label:
+                parts = [part.decode(errors='replace') if isinstance(part, bytes) else (part or '')
+                         for part in (error.stdout, error.stderr)]
+                detail = ''.join(parts)
+                (output / f'{label}.txt').write_text(detail + '\n' + str(error))
+            raise
+        if label:
+            (output / f'{label}.txt').write_text(result.stdout)
+        return result.stdout
 
     while True:
         inventory = json.loads(command(['xcrun', 'simctl', 'list', 'devices', '--json']))
@@ -41,8 +52,13 @@ def boot_target(udid, output, *, run=subprocess.run, now=time.monotonic,
         command(['xcrun', 'simctl', 'boot', udid])
     elif state not in ('Booting', 'Booted'):
         raise RuntimeError(f'Unexpected simulator state: {state}')
-    log = command(['xcrun', 'simctl', 'bootstatus', udid])
+    developer = command(['xcode-select', '-p'], label='developer', limit=10).strip()
+    command(['open', '-a', str(PurePosixPath(developer) / 'Applications/Simulator.app'),
+             '--args', '-CurrentDeviceUDID', udid], label='display-session', limit=15)
+    log = command(['xcrun', 'simctl', 'bootstatus', udid], label='bootstatus')
     (output / 'integration-boot.log').write_text(log)
+    command(['xcrun', 'simctl', 'io', udid, 'screenshot',
+             str(output / 'integration-ready.png')], label='ready-image', limit=15)
 
 
 if __name__ == '__main__':

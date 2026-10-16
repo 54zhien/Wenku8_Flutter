@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)setEdge:(NSDictionary *)edge;
 - (void)removeEdge:(NSNumber *)identifier;
 - (void)trackView:(UIView *)view;
++ (BOOL)viewHasExternalFilter:(UIView *)view;
 @end
 
 #if DEBUG
