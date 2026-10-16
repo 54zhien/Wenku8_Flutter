@@ -6,10 +6,82 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wenku8_flutter/ios_glass.dart';
+import 'package:wenku8_flutter/glass_dock.dart';
+import 'package:wenku8_flutter/app_ui.dart';
 import 'package:wenku8_flutter/native_effects.dart';
-import 'package:wenku8_flutter/scroll_edge_blur.dart';
 
 void main() {
+  testWidgets('transparent header keeps status icons legible in each theme', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    tester.view.viewPadding = const FakeViewPadding(top: 72);
+    tester.view.padding = const FakeViewPadding(top: 72);
+    addTearDown(tester.view.resetViewPadding);
+    addTearDown(tester.view.resetPadding);
+    for (final brightness in Brightness.values) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          home: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: novelSystemUiStyle(brightness),
+            child: const Align(
+              alignment: Alignment.topCenter,
+              child: FrostedHeader(child: Text('archive')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(SystemChrome.latestStyle!.statusBarBrightness, brightness);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = null;
+  });
+  testWidgets('dock uses only its active renderer animation lifecycle', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final channels = <MethodChannel>[];
+    messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
+      call,
+    ) async {
+      if (call.method == 'create') {
+        final id = (call.arguments as Map)['id'];
+        final channel = MethodChannel('org.mewx.wenku8/glass_controls/$id');
+        channels.add(channel);
+        messenger.setMockMethodCallHandler(channel, (_) async => null);
+      }
+      return null;
+    });
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      messenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
+      for (final channel in channels) {
+        messenger.setMockMethodCallHandler(channel, null);
+      }
+    });
+    Widget dock(int selected) => CupertinoApp(
+      home: Center(
+        child: GlassDock(selectedIndex: selected, onSelected: (_) {}),
+      ),
+    );
+    await tester.pumpWidget(dock(0));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(dock(1));
+    await tester.pump();
+    await tester.pumpWidget(dock(2));
+    await tester.pump();
+    expect(
+      tester.binding.transientCallbackCount,
+      nativeIOSGlassEnabled ? isZero : greaterThan(0),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
   testWidgets('system menus receive the app appearance and typed selection', (
     tester,
   ) async {

@@ -50,21 +50,31 @@ class GlassDock extends StatefulWidget {
 }
 
 class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
-  late final AnimationController _position = AnimationController.unbounded(
-    vsync: this,
-    value: widget.selectedIndex.toDouble(),
-  );
-  late final AnimationController _press = AnimationController.unbounded(
-    vsync: this,
-  );
-  late final AnimationController _stretch = AnimationController.unbounded(
-    vsync: this,
-  );
-  late final Listenable _motion = Listenable.merge([
-    _position,
-    _press,
-    _stretch,
-  ]);
+  late final AnimationController _position, _press, _stretch;
+  late final Listenable _motion;
+  bool _customControllersReady = false;
+  bool get _usesNativeControls =>
+      nativeIOSGlassEnabled &&
+      widget.items.every((item) => iosSystemSymbol(item.icon) != null);
+
+  void _prepareCustomControllers() {
+    if (_customControllersReady) return;
+    _position = AnimationController.unbounded(
+      vsync: this,
+      value: widget.selectedIndex.toDouble(),
+    );
+    _press = AnimationController.unbounded(vsync: this);
+    _stretch = AnimationController.unbounded(vsync: this);
+    _motion = Listenable.merge([_position, _press, _stretch]);
+    _customControllersReady = true;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_usesNativeControls) _prepareCustomControllers();
+  }
+
   late int _targetIndex = widget.selectedIndex;
   double _segmentWidth = 1;
   double _lastX = 0;
@@ -87,6 +97,16 @@ class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
     super.didUpdateWidget(oldWidget);
     _reduceMotion =
         widget.reduceMotion || MediaQuery.disableAnimationsOf(context);
+    if (_usesNativeControls) {
+      if (_customControllersReady) {
+        _restTimer?.cancel();
+        _position.stop();
+        _press.stop();
+        _stretch.stop();
+      }
+      return;
+    }
+    _prepareCustomControllers();
     if (widget.selectedIndex != _targetIndex) {
       _settlePosition(widget.selectedIndex);
     }
@@ -99,9 +119,11 @@ class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
   @override
   void dispose() {
     _restTimer?.cancel();
-    _position.dispose();
-    _press.dispose();
-    _stretch.dispose();
+    if (_customControllersReady) {
+      _position.dispose();
+      _press.dispose();
+      _stretch.dispose();
+    }
     super.dispose();
   }
 
@@ -232,8 +254,7 @@ class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    if (nativeIOSGlassEnabled &&
-        widget.items.every((item) => iosSystemSymbol(item.icon) != null)) {
+    if (_usesNativeControls) {
       return IOSGlassControl(
         kind: widget.navigation ? 'tabbar' : 'toolbar',
         width: double.infinity,
@@ -270,6 +291,7 @@ class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
         },
       );
     }
+    _prepareCustomControllers();
     return SizedBox(
       // The phone Gallery's three-item capsule is about 187 x 52 logical pixels.
       // Keep a similarly compact footprint, with a 48px inner touch target.

@@ -9,17 +9,19 @@ unless target
   target.add_dependency(project.targets.find { |item| item.name == 'Runner' })
   group = project.main_group.new_group('RunnerUITests', 'RunnerUITests')
   target.source_build_phase.add_file_reference(group.new_file('RunnerUITests.swift'))
-  target.build_configurations.each do |configuration|
-    configuration.build_settings.merge!(
-      'GENERATE_INFOPLIST_FILE' => 'YES',
-      'PRODUCT_BUNDLE_IDENTIFIER' => 'org.mewx.wenku8Flutter.RunnerUITests',
-      'SWIFT_VERSION' => '5.0',
-      'TEST_TARGET_NAME' => 'Runner',
-      'CODE_SIGNING_ALLOWED' => 'NO'
-    )
-  end
-  project.save
 end
+target.build_configurations.each do |configuration|
+  configuration.build_settings.merge!(
+    'GENERATE_INFOPLIST_FILE' => 'YES',
+    'PRODUCT_NAME' => '$(TARGET_NAME)',
+    'PRODUCT_BUNDLE_IDENTIFIER' => 'org.mewx.wenku8Flutter.RunnerUITests',
+    'SWIFT_VERSION' => '5.0',
+    'TARGETED_DEVICE_FAMILY' => '1,2',
+    'TEST_TARGET_NAME' => 'Runner',
+    'CODE_SIGNING_ALLOWED' => 'NO'
+  )
+end
+project.save
 path = 'ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme'
 scheme = REXML::Document.new(File.read(path))
 testables = scheme.elements['Scheme/TestAction/Testables']

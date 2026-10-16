@@ -212,6 +212,7 @@ class FrostedHeader extends StatelessWidget {
               left: 0,
               right: 0,
               child: CupertinoNavigationBar(
+                brightness: Theme.of(context).brightness,
                 automaticallyImplyLeading: false,
                 automaticallyImplyMiddle: false,
                 transitionBetweenRoutes: false,
