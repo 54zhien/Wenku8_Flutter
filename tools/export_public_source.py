@@ -17,7 +17,7 @@ FILES = (
     "tools/ci_boot_ios_simulator.py",
     "tools/test_ci_boot_ios_simulator.py",
     "tools/select_ios_simulators.py", "tools/test_select_ios_simulators.py",
-    ".github/workflows/ios-diagnostic.yml",
+    ".github/workflows/ios-diagnostic.yml", ".github/workflows/ios-ui-diagnostic.yml",
     "tools/verify_ios_archive.py", "tools/test_verify_ios_archive.py",
 )
 DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "native_tests", "android", "ios", "docs/images", "third_party/liquid_glass_easy")

@@ -83,3 +83,6 @@ Windows 上的 Swift 语法解析与 Foundation 测试不能替代 UIKit 类型�
 ## Independent unaccepted device archive
 
 `.github/workflows/ios-diagnostic.yml` builds an unsigned release `.xcarchive` without launching a simulator. Flutter 3.41.5 `build ipa --no-codesign` explicitly skips IPA export after archiving; the diagnostic workflow keeps that behavior. Its `UNACCEPTED.json` records the source SHA and verifies device arm64 Mach-O platform, iOS 26.0 minimum deployment, required App/Flutter frameworks and the verified GBK resource. This is compilation/archive evidence only. It does not replace the original interface/performance gates, generate the formal IPA or claim visual/device acceptance. Simulator-only interaction, popup selection shape, keyboard/multi-size layout and native composition checks remain outstanding until actually run.
+
+
+The separate `ios-ui-diagnostic.yml` runs the unchanged strict interaction case on one small iOS 26.0 device using the previously executable macOS 15 / Xcode 26.3 setup. It compiles before starting that device and preserves hierarchy, screenshots and xcresult. This bounded experiment seeks missing UI evidence; a green diagnostic would still not mean the original multi-device/performance/package gates passed.

@@ -1,0 +1,75 @@
+name: Unaccepted small iPhone UI diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/ios26-port']
+    paths: ['.github/workflows/ios-ui-diagnostic.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  small-ui-diagnostic:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.5'
+          channel: stable
+          cache: true
+      - run: python3 tools/check_public_source.py
+      - run: flutter pub get
+      - name: Compile before starting a single diagnostic device
+        run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
+      - name: Select the previously available small iOS 26 runtime
+        id: small
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios/ui-diagnostic
+          xcodebuild -version > build/ios/ui-diagnostic/toolchain.txt
+          xcrun simctl list devices available --json > build/ios/ui-diagnostic/devices.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          inventory = json.loads(Path('build/ios/ui-diagnostic/devices.json').read_text())
+          devices = inventory['devices'].get('com.apple.CoreSimulator.SimRuntime.iOS-26-0', [])
+          selected = next((device for device in devices if device['isAvailable'] and device['name'] == 'iPhone SE (3rd generation)'), None)
+          if selected is None:
+              raise SystemExit('Required small iOS 26.0 device is unavailable; no silent runtime substitution')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('udid=' + selected['udid'] + '\n')
+          Path('build/ios/ui-diagnostic/UNACCEPTED.txt').write_text(
+              'Diagnostic only: macOS 15 / Xcode 26.3 / one iOS 26.0 SE. '
+              'Not the full device matrix, a motion benchmark or physical-device acceptance. '
+              'Formal IPA gates are unchanged. Source: ' + os.environ['GITHUB_SHA'])
+          PY
+      - name: Start and validate only the selected diagnostic device
+        timeout-minutes: 8
+        run: python3 tools/ci_boot_ios_simulator.py '${{ steps.small.outputs.udid }}' build/ios/ui-diagnostic/boot --shutdown-others
+      - name: Run unchanged strict interaction case
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          ruby tools/configure_ios_ui_tests.rb
+          xcrun simctl ui '${{ steps.small.outputs.udid }}' appearance light
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.small.outputs.udid }}' -only-testing:RunnerUITests -parallel-testing-enabled NO -resultBundlePath build/ios/ui-diagnostic/interaction.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/ios/ui-diagnostic/interaction.log
+      - name: Export actual interface attachments
+        if: always()
+        run: |
+          if [ -d build/ios/ui-diagnostic/interaction.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/ios/ui-diagnostic/interaction.xcresult --output-path build/ios/ui-diagnostic/attachments
+          fi
+      - name: Preserve unaccepted diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNACCEPTED-small-ui-${{ github.sha }}
+          path: build/ios/ui-diagnostic
+          if-no-files-found: ignore
