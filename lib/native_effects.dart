@@ -457,17 +457,21 @@ class _NativeBackdropState extends State<NativeBackdrop> {
   Widget build(BuildContext context) {
     if (widget.bypass) return widget.child;
     final preferences = PerformanceScope.of(context);
-    if (nativeIOSGlassEnabled) {
-      return widget.effect == NativeEffect.glass
-          ? IOSGlassSurface(
-              radius: widget.radius,
-              opaque:
-                  widget.thickness <= 0 ||
-                  !preferences.glass ||
-                  !preferences.blur,
-              child: widget.child,
-            )
-          : widget.child;
+    if (nativeIOSGlassEnabled && widget.effect == NativeEffect.glass) {
+      Widget surface() => IOSGlassSurface(
+        radius:
+            widget.morph?.resolve(widget.morph!.radius, widget.radius) ??
+            widget.radius,
+        opaque:
+            widget.thickness <= 0 || !preferences.glass || !preferences.blur,
+        child: widget.child,
+      );
+      return widget.morph == null
+          ? surface()
+          : AnimatedBuilder(
+              animation: widget.morph!.animation,
+              builder: (context, _) => surface(),
+            );
     }
     if (widget.effect == NativeEffect.progressive && !preferences.edgeBlur) {
       return widget.child;

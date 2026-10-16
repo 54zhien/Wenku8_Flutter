@@ -32,7 +32,11 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
       WenkuGlassWork.recording = false; result(WenkuGlassWork.counts); return
     }
     if call.method == "layout" {
-      result(["isPad": UIDevice.current.userInterfaceIdiom == .pad]); return
+      let environment: [String: Any] = ["isPad": UIDevice.current.userInterfaceIdiom == .pad,
+        "systemVersion": UIDevice.current.systemVersion,
+        "lowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled,
+        "reduceMotion": UIAccessibility.isReduceMotionEnabled]
+      result(environment); return
     }
     guard call.method == "menu", let args = call.arguments as? [String: Any],
       let items = args["items"] as? [[String: Any]], !items.isEmpty else {

@@ -1,3 +1,4 @@
+import 'ios_glass.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -95,6 +96,7 @@ class _ReaderCatalogueState extends State<ReaderCatalogue> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
+          spacing: nativeIOSGlassEnabled ? 8 : 0,
           children: [
             const Expanded(
               child: ArchiveSection(title: '目录', code: 'READER / CONTENTS'),
@@ -115,7 +117,9 @@ class _ReaderCatalogueState extends State<ReaderCatalogue> {
         CupertinoSearchTextField(
           key: const ValueKey('reader-chapter-search'),
           controller: _search,
-          borderRadius: BorderRadius.circular(ArchiveDesign.panelRadius),
+          borderRadius: BorderRadius.circular(
+            nativeIOSGlassEnabled ? 14 : ArchiveDesign.panelRadius,
+          ),
           backgroundColor: Theme.of(context).colorScheme.surface,
           placeholder: '搜索章节名或输入章序',
           onChanged: _filterChanged,
@@ -187,7 +191,9 @@ class _ReaderCatalogueState extends State<ReaderCatalogue> {
             color: current
                 ? Theme.of(context).colorScheme.onSurface.withValues(alpha: .06)
                 : null,
-            borderRadius: BorderRadius.circular(ArchiveDesign.panelRadius),
+            borderRadius: BorderRadius.circular(
+              nativeIOSGlassEnabled ? 14 : ArchiveDesign.panelRadius,
+            ),
           ),
           child: Row(
             children: [

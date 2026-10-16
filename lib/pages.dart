@@ -555,6 +555,8 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
               _dismissSearchKeyboard();
             },
             decoration: InputDecoration(
+              filled: false,
+              fillColor: Colors.transparent,
               border: InputBorder.none,
               hintText: '书名、作者',
               isDense: true,
@@ -609,6 +611,7 @@ class DiscoverPage extends StatelessWidget {
   final void Function(BuildContext context)? onChooseCategory;
 
   Widget buildHeader(BuildContext context) => Row(
+    spacing: nativeIOSGlassEnabled ? 8 : 0,
     children: [
       Expanded(
         child: const ArchiveMasthead(
@@ -808,6 +811,7 @@ class DiscoverPage extends StatelessWidget {
             builder: (buttonContext) => GlassIconButton(
               icon: CupertinoIcons.line_horizontal_3_decrease,
               label: '分类与排序',
+              glass: !nativeIOSGlassEnabled,
               onPressed: () => onChooseCategory != null
                   ? onChooseCategory!(buttonContext)
                   : _chooseSort(buttonContext),
@@ -1059,6 +1063,7 @@ class ShelfPage extends StatefulWidget {
   final bool showHeader;
 
   Widget buildHeader(BuildContext context) => Row(
+    spacing: nativeIOSGlassEnabled ? 8 : 0,
     children: [
       Expanded(
         child: const ArchiveMasthead(
@@ -1066,6 +1071,16 @@ class ShelfPage extends StatefulWidget {
           code: '02 / PERSONAL ARCHIVE',
         ),
       ),
+      if (nativeIOSGlassEnabled)
+        GlassMenuAnchor(
+          child: Builder(
+            builder: (anchor) => GlassIconButton(
+              icon: CupertinoIcons.line_horizontal_3_decrease,
+              label: '书架排序',
+              onPressed: () => _chooseSort(anchor),
+            ),
+          ),
+        ),
       GlassIconButton(
         icon: CupertinoIcons.clock,
         label: '阅读历史',
@@ -1073,6 +1088,47 @@ class ShelfPage extends StatefulWidget {
       ),
     ],
   );
+
+  Future<void> _chooseSort(BuildContext context) async {
+    final currentSort = _ShelfSort.values.firstWhere(
+      (sort) => sort.name == state.shelfSort,
+      orElse: () => _ShelfSort.recentRead,
+    );
+    final sort = await showGlassMenu<_ShelfSort>(
+      context: context,
+      nativeOptions: [
+        for (final (value, label) in [
+          (_ShelfSort.recentRead, '最近阅读'),
+          (_ShelfSort.recentAdded, '最近加入'),
+          (_ShelfSort.title, '书名'),
+        ])
+          IOSMenuOption(value, label, selected: value == currentSort),
+      ],
+      reduceMotion: state.reduceMotion,
+      builder: (menuContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (value, label) in [
+            (_ShelfSort.recentRead, '最近阅读'),
+            (_ShelfSort.recentAdded, '最近加入'),
+            (_ShelfSort.title, '书名'),
+          ])
+            GlassMenuItem(
+              order: value.index,
+              label: label,
+              selected: value == currentSort,
+              onPressed: () => Navigator.of(menuContext).pop(value),
+            ),
+        ],
+      ),
+    );
+    if (!context.mounted || sort == null) return;
+    try {
+      await state.setShelfView(sort: sort.name);
+    } catch (_) {
+      if (context.mounted) showNovelFeedback(context, '书架排序保存失败，请重试');
+    }
+  }
 
   @override
   State<ShelfPage> createState() => _ShelfPageState();
@@ -1107,6 +1163,7 @@ class _ShelfPageState extends State<ShelfPage> {
             .contains(term)) {
       return false;
     }
+    if (nativeIOSGlassEnabled) return true;
     final read = state.hasRead(id);
     final finished = book != null && state.finishedReading(book);
     return switch (state.shelfFilter) {
@@ -1197,29 +1254,32 @@ class _ShelfPageState extends State<ShelfPage> {
                             ),
                           ),
                         ),
-                        GlassMenuAnchor(
-                          child: Builder(
-                            builder: (buttonContext) => GlassTextButton(
-                              key: const ValueKey('shelf-filter'),
-                              onPressed: () => _chooseFilter(buttonContext),
-                              child: Text(switch (state.shelfFilter) {
-                                'unread' => '未读',
-                                'reading' => '阅读中',
-                                'finished' => '已读完',
-                                _ => '全部',
-                              }),
+                        if (!nativeIOSGlassEnabled)
+                          GlassMenuAnchor(
+                            child: Builder(
+                              builder: (buttonContext) => GlassTextButton(
+                                key: const ValueKey('shelf-filter'),
+                                onPressed: () => _chooseFilter(buttonContext),
+                                child: Text(switch (state.shelfFilter) {
+                                  'unread' => '未读',
+                                  'reading' => '阅读中',
+                                  'finished' => '已读完',
+                                  _ => '全部',
+                                }),
+                              ),
                             ),
                           ),
-                        ),
-                        GlassMenuAnchor(
-                          child: Builder(
-                            builder: (buttonContext) => GlassIconButton(
-                              icon: CupertinoIcons.line_horizontal_3_decrease,
-                              label: '书架排序',
-                              onPressed: () => _chooseSort(buttonContext),
+                        if (!nativeIOSGlassEnabled)
+                          GlassMenuAnchor(
+                            child: Builder(
+                              builder: (buttonContext) => GlassIconButton(
+                                icon: CupertinoIcons.line_horizontal_3_decrease,
+                                label: '书架排序',
+                                onPressed: () =>
+                                    widget._chooseSort(buttonContext),
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ],
@@ -1246,7 +1306,11 @@ class _ShelfPageState extends State<ShelfPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      state.shelf.isEmpty ? '在发现页收藏喜欢的书' : '试试其他关键词或切回全部',
+                      state.shelf.isEmpty
+                          ? '在发现页收藏喜欢的书'
+                          : nativeIOSGlassEnabled
+                          ? '试试其他关键词'
+                          : '试试其他关键词或切回全部',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,
@@ -1355,43 +1419,6 @@ class _ShelfPageState extends State<ShelfPage> {
       ),
     ),
   );
-
-  Future<void> _chooseSort(BuildContext context) async {
-    final sort = await showGlassMenu<_ShelfSort>(
-      context: context,
-      nativeOptions: [
-        for (final (value, label) in [
-          (_ShelfSort.recentRead, '最近阅读'),
-          (_ShelfSort.recentAdded, '最近加入'),
-          (_ShelfSort.title, '书名'),
-        ])
-          IOSMenuOption(value, label, selected: value == _sort),
-      ],
-      reduceMotion: state.reduceMotion,
-      builder: (menuContext) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (value, label) in [
-            (_ShelfSort.recentRead, '最近阅读'),
-            (_ShelfSort.recentAdded, '最近加入'),
-            (_ShelfSort.title, '书名'),
-          ])
-            GlassMenuItem(
-              order: value.index,
-              label: label,
-              selected: value == _sort,
-              onPressed: () => Navigator.of(menuContext).pop(value),
-            ),
-        ],
-      ),
-    );
-    if (!mounted || sort == null) return;
-    try {
-      await state.setShelfView(sort: sort.name);
-    } catch (_) {
-      if (context.mounted) showNovelFeedback(context, '书架排序保存失败，请重试');
-    }
-  }
 
   Future<void> _chooseFilter(BuildContext context) async {
     final filter = await showGlassMenu<String>(
@@ -1872,51 +1899,29 @@ class SettingsPage extends StatelessWidget {
         ),
       ],
     );
-    final selector = nativeIOSGlassEnabled
-        ? IOSSelectionButton<ThemeMode>(
-            label: switch (state.theme) {
-              ThemeMode.system => '跟随系统',
-              ThemeMode.light => '浅色',
-              ThemeMode.dark => '深色',
-            },
-            semanticLabel: '选择外观模式',
-            options: [
-              for (final (mode, label) in [
-                (ThemeMode.system, '跟随系统'),
-                (ThemeMode.light, '浅色'),
-                (ThemeMode.dark, '深色'),
-              ])
-                IOSMenuOption(mode, label, selected: state.theme == mode),
+    final selector = GlassMenuAnchor(
+      child: Builder(
+        builder: (anchorContext) => LiquidGlass(
+          radius: 20,
+          elevated: false,
+          semanticLabel: '选择外观模式',
+          onTap: () => _chooseTheme(anchorContext),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(switch (state.theme) {
+                ThemeMode.system => '跟随系统',
+                ThemeMode.light => '浅色',
+                ThemeMode.dark => '深色',
+              }),
+              const SizedBox(width: 7),
+              const Icon(CupertinoIcons.chevron_down, size: 14),
             ],
-            onSelected: (mode) =>
-                _savePreference(context, () => state.setTheme(mode)),
-          )
-        : GlassMenuAnchor(
-            child: Builder(
-              builder: (anchorContext) => LiquidGlass(
-                radius: 20,
-                elevated: false,
-                semanticLabel: '选择外观模式',
-                onTap: () => _chooseTheme(anchorContext),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(switch (state.theme) {
-                      ThemeMode.system => '跟随系统',
-                      ThemeMode.light => '浅色',
-                      ThemeMode.dark => '深色',
-                    }),
-                    const SizedBox(width: 7),
-                    const Icon(CupertinoIcons.chevron_down, size: 14),
-                  ],
-                ),
-              ),
-            ),
-          );
+          ),
+        ),
+      ),
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
@@ -2745,6 +2750,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   );
 
   Widget _header(BuildContext context) => Row(
+    spacing: nativeIOSGlassEnabled ? 8 : 0,
     children: [
       GlassIconButton(
         icon: CupertinoIcons.back,
@@ -3914,6 +3920,7 @@ class _ReaderPageState extends State<ReaderPage>
                   animation: _chrome,
                   slide: const Offset(0, -8),
                   child: Row(
+                    spacing: nativeIOSGlassEnabled ? 8 : 0,
                     children: [
                       GlassIconButton(
                         icon: CupertinoIcons.back,

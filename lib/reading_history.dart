@@ -1,3 +1,4 @@
+import 'ios_glass.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -57,6 +58,7 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
     body: Atmosphere(
       child: GlassHeaderLayout(
         header: Row(
+          spacing: nativeIOSGlassEnabled ? 8 : 0,
           children: [
             GlassIconButton(
               icon: CupertinoIcons.back,

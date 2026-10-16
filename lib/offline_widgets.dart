@@ -1,3 +1,4 @@
+import 'ios_glass.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -225,6 +226,7 @@ class _OfflineCachePageState extends State<OfflineCachePage> {
     body: Atmosphere(
       child: GlassHeaderLayout(
         header: Row(
+          spacing: nativeIOSGlassEnabled ? 8 : 0,
           children: [
             GlassIconButton(
               icon: CupertinoIcons.back,

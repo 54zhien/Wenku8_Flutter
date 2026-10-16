@@ -1,3 +1,4 @@
+import 'support/ios_visual_revision_checks.dart' as visual;
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -11,6 +12,9 @@ import 'package:wenku8_flutter/app_ui.dart';
 import 'package:wenku8_flutter/native_effects.dart';
 
 void main() {
+  if (const bool.fromEnvironment('WENKU8_NATIVE_GLASS')) {
+    group('iOS visual revision', visual.main);
+  }
   testWidgets('transparent header keeps status icons legible in each theme', (
     tester,
   ) async {
@@ -217,9 +221,15 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: SizedBox(height: 120, child: ProgressiveBlur())),
     );
+    expect(find.byType(NativeBackdrop), findsOneWidget);
     expect(
-      find.byType(NativeBackdrop),
-      nativeIOSGlassEnabled ? findsNothing : findsOneWidget,
+      find.descendant(
+        of: find.byType(NativeBackdrop),
+        matching: find.byType(UiKitView),
+      ),
+      findsNothing,
+      reason:
+          'The restored blur is a separate background plane, never an ancestor filter of UIKit controls.',
     );
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     await tester.pumpWidget(

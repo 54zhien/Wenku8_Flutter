@@ -181,9 +181,7 @@ class FrostedHeader extends StatelessWidget {
     this.blurBackground = true,
   });
 
-  static double get toolbarHeight => nativeIOSGlassEnabled
-      ? const CupertinoNavigationBar().preferredSize.height
-      : 56.0;
+  static const toolbarHeight = 56.0;
   static const featherHeight = 56.0;
   final Widget child;
   final bool blurBackground;
@@ -200,32 +198,6 @@ class FrostedHeader extends StatelessWidget {
     );
     final appearance = GlassAppearance.of(context);
     final highContrast = MediaQuery.highContrastOf(context);
-    if (nativeIOSGlassEnabled) {
-      return SizedBox(
-        key: const ValueKey('frosted-navigation-plane'),
-        height: statusHeight + toolbarHeight + featherHeight,
-        child: Stack(
-          children: [
-            if (blurBackground) Positioned.fill(child: ProgressiveBlur()),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: CupertinoNavigationBar(
-                brightness: Theme.of(context).brightness,
-                automaticallyImplyLeading: false,
-                automaticallyImplyMiddle: false,
-                transitionBetweenRoutes: false,
-                enableBackgroundFilterBlur: false,
-                backgroundColor: Colors.transparent,
-                border: null,
-                middle: child,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
     return SizedBox(
       key: const ValueKey('frosted-navigation-plane'),
       height: statusHeight + toolbarHeight + featherHeight,
@@ -542,15 +514,25 @@ class GlassIconButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.color,
+    this.glass = true,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback? onPressed;
   final Color? color;
+  final bool glass;
 
   @override
   Widget build(BuildContext context) {
+    if (!glass) {
+      return IconButton(
+        tooltip: label,
+        onPressed: onPressed,
+        constraints: const BoxConstraints(minWidth: 46, minHeight: 46),
+        icon: Icon(icon, size: 21, color: color),
+      );
+    }
     if (nativeIOSGlassEnabled && iosSystemSymbol(icon) != null) {
       return IOSGlassControl(
         kind: 'button',
@@ -1309,20 +1291,23 @@ Future<T?> showGlassMenu<T>({
       box.size.isEmpty) {
     return null;
   }
-  if (nativeIOSGlassEnabled && nativeOptions != null) {
-    _activeGlassOverlays[context] = true;
-    try {
-      FocusManager.instance.primaryFocus?.unfocus();
-      return await showIOSMenu(context, nativeOptions);
-    } finally {
-      _activeGlassOverlays[context] = false;
-    }
-  }
+  // Keep the archive's menu contents/selected fill. A detached UIKit menu
+  // cannot morph the visible source and replaces those contents with UIMenu.
   final appearance = GlassAppearance.of(context);
   GlassMenuSource? source;
   void capture(Element element) {
     if (source != null) return;
     final widget = element.widget;
+    if (nativeIOSGlassEnabled && widget is GlassIconButton) {
+      source = GlassMenuSource(
+        foreground: Icon(widget.icon, size: 21, color: widget.color),
+      );
+      return;
+    }
+    if (nativeIOSGlassEnabled && widget is GlassTextButton) {
+      source = GlassMenuSource(foreground: widget.child);
+      return;
+    }
     if (widget is LiquidGlass) {
       source = GlassMenuSource(
         radius: widget.radius,
@@ -1522,7 +1507,9 @@ class GlassMenuItem extends StatelessWidget {
                       context,
                     ).colorScheme.onSurface.withValues(alpha: .9)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(ArchiveDesign.panelRadius),
+              borderRadius: BorderRadius.circular(
+                nativeIOSGlassEnabled ? 14 : ArchiveDesign.panelRadius,
+              ),
             ),
             child: Row(
               children: [

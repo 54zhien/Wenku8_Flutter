@@ -28,6 +28,7 @@ import 'updates/update_page.dart';
 import 'wenku_account.dart';
 import 'wenku_features.dart';
 import 'ios_glass.dart';
+import 'ios_motion_diagnostics.dart';
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
@@ -102,6 +103,36 @@ class NovelApp extends StatefulWidget {
 }
 
 class _NovelAppState extends State<NovelApp> {
+  late final IOSMotionDiagnostics? _motionDiagnostic =
+      IOSMotionDiagnostics.enabled && nativeIOSGlassEnabled
+      ? IOSMotionDiagnostics(
+          environment: () {
+            final view = WidgetsBinding.instance.platformDispatcher.views.first;
+            return {
+              'refresh_hz': view.display.refreshRate,
+              'physical_size': [
+                view.physicalSize.width,
+                view.physicalSize.height,
+              ],
+              'app_reduce_motion': state.reduceMotion,
+              'performance_motion': state.performance.motion,
+              'system_disable_animations': WidgetsBinding
+                  .instance
+                  .platformDispatcher
+                  .accessibilityFeatures
+                  .disableAnimations,
+            };
+          },
+          save: saveIOSMotionDiagnostic,
+        )
+      : null;
+
+  @override
+  void dispose() {
+    _motionDiagnostic?.dispose();
+    super.dispose();
+  }
+
   LibraryState get state => widget.state;
   NovelRepository get repository => widget.repository;
   WenkuFeatures? get features => widget.features;
@@ -127,6 +158,7 @@ class _NovelAppState extends State<NovelApp> {
         return MaterialApp(
           title: '轻小说文库',
           debugShowCheckedModeBanner: false,
+          navigatorObservers: [?_motionDiagnostic],
           scrollBehavior: const NovelScrollBehavior(),
           theme: _theme(Brightness.light),
           darkTheme: _theme(Brightness.dark),

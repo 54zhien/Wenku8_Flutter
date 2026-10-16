@@ -86,3 +86,9 @@ Windows 上的 Swift 语法解析与 Foundation 测试不能替代 UIKit 类型�
 
 
 The separate `ios-ui-diagnostic.yml` runs the unchanged strict interaction case on one small iOS 26.0 device using the previously executable macOS 15 / Xcode 26.3 setup. It compiles before starting that device and preserves hierarchy, screenshots and xcresult. This bounded experiment seeks missing UI evidence; a green diagnostic would still not mean the original multi-device/performance/package gates passed.
+
+## 七张真机截图修订 R1
+
+本轮恢复原项目的菜单文字、深色选中底色和外观选择文字；iOS 菜单使用原来的源控件伸展与隐藏生命周期，玻璃背景保留原生 UIGlassEffect。发现排序取消玻璃，iOS 书架移除“全部”筛选并将排序放在历史左侧；搜索遮盖、控件间距、顶部实际模糊与目录圆角分别修正。细节、Nagi/Apple 对照和证据见 [修订记录](superpowers/plans/2026-10-16-ios26-visual-r1.md)。
+
+独立诊断归档开启 `WENKU8_MOTION_DIAGNOSTICS=true`，正常构建默认关闭。自行签名安装诊断包后，重复打开/返回书籍与设置详情，再保持页面静止至少五秒。在“文件 → 我的 iPhone → 轻小说文库 → WenkuMotion”取出 motion-latest.json，可用于继续定位真机动画缺失。报告只含帧时序、构建来源与环境开关，不含书名、正文和账号；它不测量实际呈现 FPS，不能单独证明流畅度通过。系统版本与低电量状态在导出时读取。安装、Files 导出及真实画面仍待设备执行。

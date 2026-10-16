@@ -37,7 +37,7 @@ jobs:
           set -euo pipefail
           mkdir -p build/ios/diagnostic-device
           xcodebuild -version > build/ios/diagnostic-device/toolchain.txt
-          flutter build ipa --release --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true 2>&1 | tee build/ios/diagnostic-device/archive.log
+          flutter build ipa --release --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true --dart-define=WENKU8_MOTION_DIAGNOSTICS=true --dart-define="WENKU8_SOURCE_SHA=$GITHUB_SHA" 2>&1 | tee build/ios/diagnostic-device/archive.log
           python3 tools/verify_ios_archive.py build/ios/archive --sha "$GITHUB_SHA" --output build/ios/diagnostic-device/UNACCEPTED.json
           ditto -c -k --keepParent build/ios/archive build/ios/diagnostic-device/UNACCEPTED-device-archive.zip
           shasum -a 256 build/ios/diagnostic-device/UNACCEPTED-device-archive.zip > build/ios/diagnostic-device/SHA256.txt
