@@ -54,9 +54,21 @@ jobs:
           "$RUNNER_TEMP/wenku-protocol-tests"
       - name: Compile native-glass simulator candidate
         run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
-      - name: Run native iOS tests
+      - name: Boot selected test simulator
+        timeout-minutes: 8
         run: |
-          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.simulator.outputs.udid }}' -resultBundlePath build/ios/native-tests.xcresult CODE_SIGNING_ALLOWED=NO
+          set -euo pipefail
+          simulator='${{ steps.simulator.outputs.udid }}'
+          xcrun simctl boot "$simulator"
+          xcrun simctl bootstatus "$simulator" -b
+          mkdir -p build/ios/diagnostics
+          xcrun simctl list devices --json > build/ios/diagnostics/devices-before-tests.json
+          xcrun simctl io "$simulator" screenshot build/ios/diagnostics/before-tests.png
+      - name: Run native iOS tests
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.simulator.outputs.udid }}' -parallel-testing-enabled NO -resultBundlePath build/ios/native-tests.xcresult CODE_SIGNING_ALLOWED=NO
       - name: Capture native-glass simulator previews
         shell: bash
         run: |
@@ -98,5 +110,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios26-test-evidence
-          path: build/ios/native-tests.xcresult
+          path: |
+            build/ios/native-tests.xcresult
+            build/ios/diagnostics
           if-no-files-found: ignore
