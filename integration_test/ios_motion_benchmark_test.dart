@@ -20,12 +20,12 @@ import '../test/support/cover_fixture.dart';
 import '../test/support/offline_fixture.dart';
 import 'support/native_host.dart';
 
-Future<void> main() async {
+void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   // Let animation tickers request every vsync between test actions. The live
   // binding's default policy otherwise suppresses frames between explicit pumps.
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
-  await awaitNativeTestHost(binding);
+  setUpAll(() => awaitNativeTestHost(binding));
   testWidgets('record the same real book search and settings transitions', (
     tester,
   ) async {

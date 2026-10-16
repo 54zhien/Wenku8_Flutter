@@ -4,8 +4,9 @@ import 'dart:io';
 import 'package:integration_test/integration_test.dart';
 
 /// XCTest enables native accessibility as it attaches to the test host. Wait
-/// for that suite-owned setup before testWidgets records its semantics-handle
-/// baseline. The normal leak assertion remains enabled inside every test.
+/// in setUpAll for that suite-owned setup before testWidgets records its
+/// semantics-handle baseline. Register all tests synchronously in main first.
+/// The normal leak assertion remains enabled inside every test.
 Future<void> awaitNativeTestHost(
   IntegrationTestWidgetsFlutterBinding binding,
 ) async {
@@ -20,7 +21,7 @@ Future<void> awaitNativeTestHost(
 }
 
 /// iOS has no dart:io filesystem watcher. This bounded readiness check happens
-/// before test registration and outside every measured motion scene.
+/// in suite setup, outside every measured motion scene.
 Future<void> waitForNativeTestHostFile(
   File marker, {
   Duration timeout = const Duration(seconds: 240),

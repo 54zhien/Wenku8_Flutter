@@ -10,10 +10,10 @@ import 'package:wenku8_flutter/ios_scroll_edge.dart';
 import 'package:wenku8_flutter/app_ui.dart';
 import 'support/native_host.dart';
 
-Future<void> main() async {
+void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
-  await awaitNativeTestHost(binding);
+  setUpAll(() => awaitNativeTestHost(binding));
   final reports = <String, Object?>{};
   Future<void> saveReports() => File(
     '${Directory.systemTemp.path}/wenku-native-capture-probe.json',
