@@ -53,6 +53,15 @@ Future<void> _expand(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('Android search retains its original theme fill', (tester) async {
+    await _mount(tester);
+    await _expand(tester);
+    final decorator = tester.widget<InputDecorator>(
+      find.descendant(of: _input, matching: find.byType(InputDecorator)),
+    );
+    expect(decorator.decoration.filled, isTrue);
+  });
+
   testWidgets('search grows from its own control without pushing a route', (
     tester,
   ) async {

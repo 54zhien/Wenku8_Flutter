@@ -555,8 +555,8 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
               _dismissSearchKeyboard();
             },
             decoration: InputDecoration(
-              filled: false,
-              fillColor: Colors.transparent,
+              filled: nativeIOSGlassEnabled ? false : null,
+              fillColor: nativeIOSGlassEnabled ? Colors.transparent : null,
               border: InputBorder.none,
               hintText: '书名、作者',
               isDense: true,
