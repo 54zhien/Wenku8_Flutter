@@ -17,6 +17,8 @@ def main():
     parser.add_argument('udid', nargs='?')
     parser.add_argument('output', type=Path)
     parser.add_argument('--shutdown')
+    parser.add_argument('--shutdown-others', action='store_true',
+                        help='Stop other booted devices on this disposable CI host')
     parser.add_argument('--initialize', action='store_true',
                         help='Initialize the display service before device discovery')
     args = parser.parse_args()
@@ -53,6 +55,19 @@ def main():
     status = 1
     try:
         run('processes-before', ['ps', '-axo', 'pid,ppid,state,etime,pcpu,comm'], 5, False)
+        if not args.initialize:
+            # Inspect/stop other CI devices before opening the selected GUI.
+            # Opening Simulator without a UDID can auto-boot its remembered
+            # default, so workflow callers must discover/select the device first.
+            run('devices-before', ['xcrun', 'simctl', 'list', 'devices', '--json'], 10)
+            inventory = json.loads((args.output / 'devices-before.txt').read_text())
+            for devices in inventory['devices'].values():
+                for device in devices:
+                    identifier = device['udid']
+                    if identifier == args.udid or device['state'] == 'Shutdown':
+                        continue
+                    if args.shutdown_others or identifier == args.shutdown:
+                        run(f'shutdown-{identifier}', ['xcrun', 'simctl', 'shutdown', identifier], 20)
         developer = subprocess.check_output(['xcode-select', '-p'], timeout=10,
                                             text=True).strip()
         simulator = Path(developer) / 'Applications/Simulator.app'
@@ -61,18 +76,9 @@ def main():
             command += ['--args', '-CurrentDeviceUDID', args.udid]
         run('display-session', command, 15)
         if args.initialize:
-            # Launch only: CoreSimulator may still be mounting runtime images.
-            # Workflow device discovery and the later boot/image gate remain
-            # mandatory after tool setup; this stage cannot certify readiness.
+            # GUI launch only; this mode is not used by the device workflows.
             status = 0
             return status
-        run('devices-before', ['xcrun', 'simctl', 'list', 'devices', '--json'], 10)
-        if args.shutdown:
-            inventory = json.loads((args.output / 'devices-before.txt').read_text())
-            previous = next((device for devices in inventory['devices'].values()
-                             for device in devices if device['udid'] == args.shutdown), None)
-            if previous and previous['state'] != 'Shutdown':
-                run('shutdown-previous', ['xcrun', 'simctl', 'shutdown', args.shutdown], 20)
         # bootstatus -b handles an already-booted device and the initial boot.
         run('boot-readiness', ['xcrun', 'simctl', 'bootstatus', args.udid, '-b'], 360)
         run('ready-image', ['xcrun', 'simctl', 'io', args.udid, 'screenshot',

@@ -11,22 +11,25 @@ import ci_boot_ios_simulator as boot
 
 
 class SimulatorGateTests(unittest.TestCase):
-    def exercise(self, *, initialize=False, timeout=False, image_failure=False, inventory_timeout=False, display_failure=False):
+    def exercise(self, *, initialize=False, timeout=False, image_failure=False, inventory_timeout=False, display_failure=False, shutdown_others=False, inventory=None, shutdown_failure=False):
         commands = []
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary) / 'evidence'
             arguments = ['boot', '--initialize', str(destination)] if initialize else [
                 'boot', '00000000-0000-0000-0000-000000000000', str(destination)]
 
+            if shutdown_others:
+                arguments += ['--shutdown-others']
+
             def execute(command, *, stdout, **options):
                 commands.append(command)
                 if command[:4] == ['xcrun', 'simctl', 'list', 'devices']:
                     if inventory_timeout:
                         raise subprocess.TimeoutExpired(command, options['timeout'])
-                    stdout.write(b'{"devices": {}}')
+                    stdout.write(json.dumps(inventory or {'devices': {}}).encode())
                 if command[:3] == ['xcrun', 'simctl', 'bootstatus'] and timeout:
                     raise subprocess.TimeoutExpired(command, options['timeout'])
-                code = 1 if ((image_failure and 'screenshot' in command) or (display_failure and command[0] == 'open')) else 0
+                code = 1 if ((image_failure and 'screenshot' in command) or (display_failure and command[0] == 'open') or (shutdown_failure and command[:3] == ['xcrun', 'simctl', 'shutdown'])) else 0
                 return subprocess.CompletedProcess(command, code)
 
             with patch.object(boot.sys, 'platform', 'darwin'), \
@@ -57,6 +60,29 @@ class SimulatorGateTests(unittest.TestCase):
     def test_display_launch_failure_still_fails_initialization(self):
         status, _, _ = self.exercise(initialize=True, display_failure=True)
         self.assertEqual(status, 1)
+
+    def test_only_other_running_devices_stop_before_display_and_boot(self):
+        target = '00000000-0000-0000-0000-000000000000'
+        other = '11111111-1111-1111-1111-111111111111'
+        stopped = '22222222-2222-2222-2222-222222222222'
+        inventory = {'devices': {'runtime': [
+            {'udid': target, 'state': 'Booted'},
+            {'udid': other, 'state': 'Booted'},
+            {'udid': stopped, 'state': 'Shutdown'}]}}
+        status, _, commands = self.exercise(shutdown_others=True, inventory=inventory)
+        self.assertEqual(status, 0)
+        shutdowns = [command for command in commands if command[:3] == ['xcrun', 'simctl', 'shutdown']]
+        self.assertEqual(shutdowns, [['xcrun', 'simctl', 'shutdown', other]])
+        shutdown_index = commands.index(shutdowns[0])
+        self.assertLess(shutdown_index, next(i for i, cmd in enumerate(commands) if cmd[0] == 'open'))
+        self.assertLess(shutdown_index, next(i for i, cmd in enumerate(commands) if 'bootstatus' in cmd))
+
+    def test_failed_other_device_shutdown_stops_before_gui_or_boot(self):
+        inventory = {'devices': {'runtime': [
+            {'udid': '11111111-1111-1111-1111-111111111111', 'state': 'Booted'}]}}
+        status, _, commands = self.exercise(shutdown_others=True, inventory=inventory, shutdown_failure=True)
+        self.assertEqual(status, 1)
+        self.assertFalse(any(command[0] == 'open' or 'bootstatus' in command for command in commands))
 
     def test_timeout_fails_once_and_keeps_diagnostics(self):
         status, evidence, commands = self.exercise(timeout=True)
