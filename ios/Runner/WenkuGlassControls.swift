@@ -15,6 +15,12 @@ private enum WenkuGlassWork {
     counts["window_snapshot_total_us", default: 0] += elapsed
     counts["window_snapshot_max_us"] = max(counts["window_snapshot_max_us", default: 0], elapsed)
   }
+  static func captureDuration(_ start: CFTimeInterval) {
+    guard recording else { return }
+    let elapsed = Int((CACurrentMediaTime() - start) * 1_000_000)
+    counts["control_capture_total_us", default: 0] += elapsed
+    counts["control_capture_max_us"] = max(counts["control_capture_max_us", default: 0], elapsed)
+  }
 }
 
 /// Native-only prototype. Flutter owns state/routes; this view owns controls.
@@ -153,6 +159,8 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
     return pixels.map { Unmanaged.passRetained($0) }
   }
   func capture(_ view: UIView) -> Bool {
+    let started = CACurrentMediaTime()
+    defer { WenkuGlassWork.captureDuration(started) }
     guard Thread.isMainThread, let window = view.window,
       view.bounds.width.isFinite, view.bounds.height.isFinite,
       view.bounds.width > 0, view.bounds.height > 0 else { return false }
@@ -190,6 +198,19 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
     lock.lock(); pixels = buffer; lock.unlock()
     return true
   }
+#if DEBUG
+  /// Read only a fixed diagnostic sample from test-generated colour patterns.
+  func centerPixelBGRA() -> [UInt8]? {
+    guard let buffer = copyPixelBuffer()?.takeRetainedValue(),
+      CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else { return nil }
+    defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+    guard let address = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+    let offset = CVPixelBufferGetBytesPerRow(buffer) * (CVPixelBufferGetHeight(buffer) / 2)
+      + (CVPixelBufferGetWidth(buffer) / 2) * 4
+    let pointer = address.assumingMemoryBound(to: UInt8.self).advanced(by: offset)
+    return Array(UnsafeBufferPointer(start: pointer, count: 4))
+  }
+#endif
 }
 
 private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureRecognizerDelegate, UITabBarControllerDelegate {
@@ -234,7 +255,13 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
         self.textureId = id
         self.textures.textureFrameAvailable(id)
         WenkuGlassWork.add("snapshots_captured")
-        result(["textureId": id, "width": self.root.bounds.width, "height": self.root.bounds.height])
+        var response: [String: Any] = ["textureId": id, "width": self.root.bounds.width, "height": self.root.bounds.height]
+#if DEBUG
+        if (call.arguments as? [String: Any])?["probe"] as? Bool == true {
+          response["centerPixelBGRA"] = texture.centerPixelBGRA()
+        }
+#endif
+        result(response)
       }
       else { result(FlutterMethodNotImplemented) }
     }

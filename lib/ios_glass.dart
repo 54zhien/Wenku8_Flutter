@@ -78,6 +78,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   Object? _lastSent;
   IOSNativeScene? _scene;
   int _captureRevision = 0;
+  bool _sceneMoving = false;
   int? _textureId;
   Size? _captureSize;
   final _pointers = <int>{};
@@ -154,6 +155,13 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   }
 
   void _compositionChanged() {
+    final moving = _scene?.moving ?? false;
+    if (moving && !_sceneMoving && _capturing) {
+      // The request was queued at rest, but its window may be rendered only
+      // after navigation starts. Never admit that crop into the moving plane.
+      _invalidateCapture();
+    }
+    _sceneMoving = moving;
     final revision = _scene?.captureRevision ?? 0;
     if (_captureRevision != revision) {
       _captureRevision = revision;
@@ -245,7 +253,9 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
       _scene?.removeListener(_compositionChanged);
       _scene = scene;
       _captureRevision = scene?.captureRevision ?? 0;
+      _sceneMoving = scene?.moving ?? false;
       _scene?.addListener(_compositionChanged);
+      _invalidateCapture();
     }
     _sync();
     _queueCapture();

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wenku8_flutter/app_ui.dart';
 import 'package:wenku8_flutter/ios_glass.dart';
+import 'package:wenku8_flutter/ios_native_composition.dart';
 
 void main() {
   if (!const bool.fromEnvironment('WENKU8_NATIVE_GLASS')) return;
@@ -148,6 +149,81 @@ void main() {
       isNot(99999),
     );
     expect(creates, 1);
+  });
+
+  nativeTest(
+    'a capture overlapping route motion cannot become a moving texture',
+    (tester) async {
+      late BuildContext home;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              home = context;
+              return Atmosphere(
+                child: Center(child: control(const ValueKey('race-source'))),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final pending = Completer<Map<String, Object?>>();
+      delayed = pending;
+      Navigator.of(home).push(
+        softRoute<void>(
+          Atmosphere(
+            child: Center(child: control(const ValueKey('race-target'))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('race-target'))),
+      ).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(nativeLayers(tester), 1);
+      pending.complete({'textureId': 99997, 'width': 46.0, 'height': 46.0});
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        nativeLayers(tester),
+        1,
+        reason:
+            'A capture started before motion can contain a moving window crop',
+      );
+      expect(textureLayers(tester), 1);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  nativeTest('a reparented control refreshes its previous scene crop', (
+    tester,
+  ) async {
+    final key = GlobalKey();
+    final pending = Completer<Map<String, Object?>>();
+    delayed = pending;
+    Widget page(bool right) => MaterialApp(
+      home: IOSNativeComposition(
+        key: ValueKey(right),
+        child: Align(
+          alignment: right ? Alignment.bottomRight : Alignment.topLeft,
+          child: control(key),
+        ),
+      ),
+    );
+    await tester.pumpWidget(page(false));
+    await tester.pump();
+    expect(captures, 1);
+    await tester.pumpWidget(page(true));
+    pending.complete({'textureId': 99996, 'width': 46.0, 'height': 46.0});
+    await tester.pumpAndSettle();
+    expect(creates, 1);
+    expect(
+      captures,
+      2,
+      reason: 'The native control survives, but its old scene image must not',
+    );
   });
 
   nativeTest(
