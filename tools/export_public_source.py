@@ -14,6 +14,7 @@ FILES = (
     "tools/verify_apk_runtime.py", "tools/test_verify_apk_runtime.py",
     ".github/workflows/ios.yml", "docs/IOS.md", "docs/IOS_PERFORMANCE.md",
     "tools/configure_ios_ui_tests.rb",
+    "tools/configure_hosted_integration.rb",
     "tools/ci_boot_ios_simulator.py",
     "tools/test_ci_boot_ios_simulator.py",
     "tools/wait_ios_test_target.py", "tools/test_wait_ios_test_target.py",

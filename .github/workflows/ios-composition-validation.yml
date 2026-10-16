@@ -51,45 +51,22 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests -resultBundlePath build/composition/native-capture.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/composition/native-capture.log
-      - name: Boot the actual integration target after XCTest clone teardown
-        id: integration_boot
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          python3 tools/wait_ios_test_target.py "$COMPOSITION_TEST_UDID" build/composition
-          flutter devices --machine > build/composition/flutter-devices.json
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          devices = json.loads(Path('build/composition/flutter-devices.json').read_text())
-          assert any(d['id'] == os.environ['COMPOSITION_TEST_UDID'] and d['targetPlatform'] == 'ios' for d in devices), 'Selected iOS simulator is not discoverable by Flutter'
-          PY
-      - name: Verify native textures include changing Flutter-rendered content
+      - name: Execute the actual Flutter pixel assertions through XCTest
+        id: pixel_probe
         timeout-minutes: 8
         run: |
           set -euo pipefail
-          flutter test --verbose --no-pub integration_test/ios_native_capture_test.dart -d "$COMPOSITION_TEST_UDID" --dart-define=WENKU8_NATIVE_GLASS=true --reporter expanded 2>&1 | tee build/composition/flutter-native-capture.log
-      - name: Preserve bounded integration startup diagnostics
-        if: ${{ always() && steps.integration_boot.outcome == 'success' }}
+          ruby tools/configure_hosted_integration.rb capture
+          flutter build ios --simulator --debug --no-codesign -t integration_test/ios_native_capture_test.dart --dart-define=WENKU8_NATIVE_GLASS=true --dart-define=INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE=true
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests/WenkuHostedIntegrationTests -resultBundlePath build/composition/flutter-pixels.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/composition/flutter-native-capture.log
+      - name: Preserve native-hosted pixel evidence
+        if: always()
         run: |
-          python3 - <<'PY'
-          import os, subprocess
-          from pathlib import Path
-          root = Path('build/composition')
-          commands = {
-              'integration-processes': ['ps', '-axo', 'pid,ppid,state,etime,pcpu,comm'],
-              'integration-runtime': ['xcrun', 'simctl', 'spawn', os.environ['COMPOSITION_TEST_UDID'], 'log', 'show', '--last', '3m', '--style', 'compact', '--predicate', 'process == "Runner" OR eventMessage CONTAINS "Flutter"'],
-          }
-          for name, command in commands.items():
-              with (root / f'{name}.txt').open('wb') as log:
-                  try:
-                      result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=15, check=False)
-                      print(name, result.returncode)
-                  except subprocess.TimeoutExpired:
-                      print(name, 'diagnostic timeout; original test outcome unchanged')
-          PY
+          if [ -d build/composition/flutter-pixels.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/composition/flutter-pixels.xcresult --output-path build/composition/pixel-attachments
+          fi
       - name: Measure the delivered and candidate composition paths on the same simulator
-        if: ${{ !cancelled() && steps.integration_boot.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.pixel_probe.outcome != 'skipped' }}
         timeout-minutes: 20
         run: |
           set -euo pipefail
@@ -100,10 +77,14 @@ jobs:
           cmp integration_test/ios_motion_benchmark_test.dart "$baseline_root/integration_test/ios_motion_benchmark_test.dart"
           for variant in before edge_only after; do
             if [ "$variant" = before ]; then cd "$baseline_root"; else cd "$candidate_root"; fi
+            ruby "$candidate_root/tools/configure_hosted_integration.rb" motion
             flutter pub get
             route_texture=true
             if [ "$variant" = edge_only ]; then route_texture=false; fi
-            flutter test --no-pub integration_test/ios_motion_benchmark_test.dart -d "$COMPOSITION_TEST_UDID" --dart-define=WENKU8_NATIVE_GLASS=true --dart-define="WENKU8_ROUTE_TEXTURE=$route_texture" --dart-define="BENCHMARK_LABEL=$variant" --reporter expanded 2>&1 | tee "$candidate_root/build/composition/$variant.log"
+            flutter build ios --simulator --debug --no-codesign -t integration_test/ios_motion_benchmark_test.dart --dart-define=WENKU8_NATIVE_GLASS=true --dart-define="WENKU8_ROUTE_TEXTURE=$route_texture" --dart-define="BENCHMARK_LABEL=$variant" --dart-define=INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE=true
+            result="$candidate_root/build/composition/$variant.xcresult"
+            xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests/WenkuHostedIntegrationTests -resultBundlePath "$result" CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$candidate_root/build/composition/$variant.log"
+            xcrun xcresulttool export attachments --path "$result" --output-path "$candidate_root/build/composition/$variant-attachments"
           done
           cd "$candidate_root"
           python3 - <<'PY'
@@ -112,14 +93,20 @@ jobs:
           root = Path('build/composition')
           reports = {}
           for variant in ('before', 'edge_only', 'after'):
-              records = [line.split('WENKU_MOTION_JSON=', 1)[1] for line in (root / f'{variant}.log').read_text().splitlines() if 'WENKU_MOTION_JSON=' in line]
-              assert len(records) == 1, f'Missing or duplicate motion report: {variant}'
-              reports[variant] = json.loads(records[0])
+              records = []
+              for file in (root / f'{variant}-attachments').rglob('*'):
+                  if not file.is_file(): continue
+                  try: record = json.loads(file.read_text())
+                  except (UnicodeError, ValueError): continue
+                  if isinstance(record, dict) and record.get('label') == variant and 'scenes' in record:
+                      records.append(record)
+              assert len(records) == 1, f'Missing or duplicate actual timing attachment: {variant}'
+              reports[variant] = records[0]
               assert reports[variant]['mode'] == 'debug'
               assert len(reports[variant]['scenes']) == 2
           assert reports['before']['physical_size'] == reports['after']['physical_size']
           assert reports['before']['physical_size'] == reports['edge_only']['physical_size']
-          comparison = {'scope': 'same iOS 26.2 simulator debug scenes; not release FPS or physical-device acceptance', 'before_sha': '7bfd1edab5fbb7720173c88b06d30bf064ac54e7', 'scenes': {}}
+          comparison = {'scope': 'same iOS 26.2 simulator debug scenes through native-hosted integration_test; not release FPS or physical-device acceptance', 'before_sha': '7bfd1edab5fbb7720173c88b06d30bf064ac54e7', 'scenes': {}}
           for name, original in reports['before']['scenes'].items():
               revised = reports['after']['scenes'][name]
               assert original['refresh_hz'] == revised['refresh_hz']

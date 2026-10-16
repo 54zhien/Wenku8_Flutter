@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,10 @@ import 'package:wenku8_flutter/ios_scroll_edge.dart';
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  final reports = <String, Object?>{};
+  Future<void> saveReports() => File(
+    '${Directory.systemTemp.path}/wenku-native-capture-probe.json',
+  ).writeAsString(jsonEncode(reports), flush: true);
   testWidgets('native glass texture tracks changing Flutter Metal content', (
     tester,
   ) async {
@@ -86,6 +91,13 @@ void main() {
       'probeEnd',
     );
     expect(counts?['snapshots_captured'], 3);
+    reports['capture'] = {
+      'red_bgra': red,
+      'blue_bgra': blue,
+      'green_bgra': green,
+      'native_work_counts': counts,
+    };
+    await saveReports();
     // ignore: avoid_print
     print(
       'WENKU_CAPTURE_PROBE_JSON=${jsonEncode({'red_bgra': red, 'blue_bgra': blue, 'green_bgra': green, 'native_work_counts': counts})}',
@@ -219,6 +231,14 @@ void main() {
         'probeEdgeStatus',
       );
       expect(removed?['maskedFilters'], 0);
+      reports['edge'] = {
+        'top_contrast': top,
+        'partial_contrast': partial,
+        'translated_contrast': translated,
+        'bottom_contrast': bottom,
+        'native_work_counts': counts,
+      };
+      await saveReports();
     },
   );
 }
