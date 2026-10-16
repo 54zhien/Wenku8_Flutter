@@ -11,23 +11,30 @@ Future<void> awaitNativeTestHost(
 ) async {
   const run = String.fromEnvironment('WENKU_TEST_RUN_ID');
   if (run.isEmpty) return; // Normal flutter test/drive owns its own startup.
-  final marker = File('${Directory.systemTemp.path}/wenku-host-$run');
-  final ready = Completer<void>();
-  final watcher = marker.parent.watch().listen(
-    (_) async {
-      if (await marker.exists() && !ready.isCompleted) ready.complete();
-    },
-    onError: (Object error, StackTrace stack) {
-      if (!ready.isCompleted) ready.completeError(error, stack);
-    },
+  await waitForNativeTestHostFile(
+    File('${Directory.systemTemp.path}/wenku-host-$run'),
   );
-  try {
-    if (await marker.exists() && !ready.isCompleted) ready.complete();
-    await ready.future.timeout(const Duration(seconds: 240));
-  } finally {
-    await watcher.cancel();
-  }
   // Process native semantics activation before the first tester's leak count.
   await binding.endOfFrame;
   await binding.endOfFrame;
+}
+
+/// iOS has no dart:io filesystem watcher. This bounded readiness check happens
+/// before test registration and outside every measured motion scene.
+Future<void> waitForNativeTestHostFile(
+  File marker, {
+  Duration timeout = const Duration(seconds: 240),
+}) async {
+  final elapsed = Stopwatch()..start();
+  while (!await marker.exists()) {
+    final remaining = timeout - elapsed.elapsed;
+    if (remaining <= Duration.zero) {
+      throw TimeoutException(
+        'Native XCTest host did not become ready',
+        timeout,
+      );
+    }
+    const interval = Duration(milliseconds: 50);
+    await Future<void>.delayed(remaining < interval ? remaining : interval);
+  }
 }

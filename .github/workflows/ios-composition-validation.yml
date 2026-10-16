@@ -28,6 +28,7 @@ jobs:
       - run: flutter analyze --no-pub
       - name: Check native-control composition contracts
         run: |
+          flutter test --no-pub test/native_host_readiness_test.dart
           flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true --dart-define=WENKU8_SHARED_GAUSSIAN=false --dart-define=WENKU8_ROUTE_TEXTURE=true test/ios_composition_boundary_test.dart test/ios_scroll_edge_test.dart test/ios_edge_bridge_test.dart test/ios_route_motion_test.dart
           flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true --dart-define=WENKU8_SHARED_GAUSSIAN=true --dart-define=WENKU8_ROUTE_TEXTURE=true test/ios_shared_gaussian_test.dart
       - name: Configure simulator application for the native test build
