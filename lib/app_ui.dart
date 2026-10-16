@@ -13,6 +13,7 @@ import 'glass_optics.dart';
 import 'legacy_cover.dart';
 import 'ios_glass.dart';
 import 'ios_route_entrance.dart';
+import 'ios_native_composition.dart';
 import 'loading_ui.dart';
 import 'motion_ui.dart';
 import 'native_effects.dart';
@@ -222,7 +223,9 @@ class FrostedHeader extends StatelessWidget {
             left: padding.left + 24,
             right: padding.right + 24,
             height: toolbarHeight,
-            child: NativeGlassGroup(child: GlassForeground(child: child)),
+            child: IOSNativeForeground(
+              child: NativeGlassGroup(child: GlassForeground(child: child)),
+            ),
           ),
         ],
       ),
@@ -1661,7 +1664,7 @@ class _GlassOverlayRoute<T> extends PopupRoute<T> {
               ),
             ),
     );
-    return themes.wrap(
+    final content = themes.wrap(
       GlassAppearance(
         blur: appearance.blur,
         opacity: appearance.opacity,
@@ -1704,6 +1707,9 @@ class _GlassOverlayRoute<T> extends PopupRoute<T> {
         ),
       ),
     );
+    return nativeIOSGlassEnabled
+        ? IOSNativeComposition(child: content)
+        : content;
   }
 }
 

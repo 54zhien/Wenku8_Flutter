@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'ios_route_entrance.dart';
+import 'ios_native_composition.dart';
 
 /// Opt in while native/Flutter backdrop composition is awaiting device review.
 /// This is a rollout switch, not an automatic substitute for native material.
@@ -75,6 +76,71 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   MethodChannel? _channel;
   double? _measuredHeight;
   Object? _lastSent;
+  IOSNativeScene? _scene;
+  int? _textureId;
+  Size? _captureSize;
+  final _pointers = <int>{};
+  int _generation = 0, _captureAttempts = 0;
+  bool _captureNeeded = true, _captureQueued = false, _capturing = false;
+
+  void _invalidateCapture() {
+    _generation++;
+    _captureAttempts = 0;
+    _captureNeeded = true;
+    _queueCapture();
+  }
+
+  void _queueCapture() {
+    if (!mounted ||
+        _channel == null ||
+        !_captureNeeded ||
+        _captureQueued ||
+        _capturing ||
+        _captureAttempts >= 3 ||
+        _pointers.isNotEmpty ||
+        (_scene?.moving ?? false)) {
+      return;
+    }
+    _captureQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _captureQueued = false;
+      if (!mounted ||
+          _channel == null ||
+          !_captureNeeded ||
+          _capturing ||
+          _pointers.isNotEmpty ||
+          (_scene?.moving ?? false)) {
+        return;
+      }
+      final generation = _generation;
+      _captureAttempts++;
+      _capturing = true;
+      try {
+        final result = await _channel!.invokeMapMethod<String, dynamic>(
+          'snapshot',
+        );
+        if (!mounted) return;
+        final id = result?['textureId'];
+        if (generation == _generation && id is int && id >= 0) {
+          _captureNeeded = false;
+          if (_textureId != id) setState(() => _textureId = id);
+        }
+      } on PlatformException {
+        // Preserve the visible native control when capture is unavailable.
+      } on MissingPluginException {
+        // Older hosts keep their original live native composition.
+      } finally {
+        _capturing = false;
+        if (mounted) _queueCapture();
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _pointerEnded(PointerEvent event) {
+    setState(() => _pointers.remove(event.pointer));
+    _invalidateCapture();
+  }
 
   Map<String, Object?> get _configuration => {
     ...widget.configuration,
@@ -84,6 +150,11 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   };
 
   Future<dynamic> _receive(MethodCall call) async {
+    if (mounted && call.method == 'attached') {
+      _captureAttempts = 0;
+      _queueCapture();
+      return null;
+    }
     if (mounted && call.method == 'metrics' && call.arguments is Map) {
       widget.onMetrics?.call(Map<Object?, Object?>.from(call.arguments as Map));
       final height = (call.arguments as Map)['height'];
@@ -111,6 +182,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
     _channel = MethodChannel('org.mewx.wenku8/glass_controls/$id')
       ..setMethodCallHandler(_receive);
     _sync();
+    _queueCapture();
   }
 
   void _sync() {
@@ -120,6 +192,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
     if (_sameNativeValue(configuration, _lastSent)) return;
     final snapshot = _copyNativeValue(configuration);
     _lastSent = snapshot;
+    _invalidateCapture();
     unawaited(
       channel.invokeMethod<void>('state', configuration).catchError((
         Object error,
@@ -146,11 +219,19 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final scene = IOSNativeComposition.maybeOf(context);
+    if (scene != _scene) {
+      _scene?.removeListener(_queueCapture);
+      _scene = scene;
+      _scene?.addListener(_queueCapture);
+    }
     _sync();
+    _queueCapture();
   }
 
   @override
   void dispose() {
+    _scene?.removeListener(_queueCapture);
     _channel?.setMethodCallHandler(null);
     _channel = null;
     super.dispose();
@@ -160,11 +241,30 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   Widget build(BuildContext context) => SizedBox(
     width: widget.width,
     height: _measuredHeight ?? widget.height,
-    child: UiKitView(
-      viewType: 'org.mewx.wenku8/glass_controls',
-      creationParams: _configuration,
-      creationParamsCodec: const StandardMessageCodec(),
-      onPlatformViewCreated: _created,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        if (size.isFinite && size != _captureSize) {
+          _captureSize = size;
+          _invalidateCapture();
+        }
+        return Listener(
+          onPointerDown: (event) =>
+              setState(() => _pointers.add(event.pointer)),
+          onPointerUp: _pointerEnded,
+          onPointerCancel: _pointerEnded,
+          child: IOSNativeControlPlane(
+            textureId: _textureId,
+            interacting: _pointers.isNotEmpty,
+            child: UiKitView(
+              viewType: 'org.mewx.wenku8/glass_controls',
+              creationParams: _configuration,
+              creationParamsCodec: const StandardMessageCodec(),
+              onPlatformViewCreated: _created,
+            ),
+          ),
+        );
+      },
     ),
   );
 }

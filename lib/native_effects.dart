@@ -13,6 +13,7 @@ import 'glass_sampling_budget.dart';
 import 'performance_preferences.dart';
 import 'ios_glass.dart';
 import 'ios_scroll_edge.dart';
+import 'ios_native_composition.dart';
 
 /// Runtime effects execute on Android's Impeller GPU, without frame copies,
 /// platform-view overlays or a CPU bitmap blur.
@@ -283,8 +284,9 @@ class NativeScrollEdgeGroup extends StatefulWidget {
 class _NativeScrollEdgeGroupState extends State<NativeScrollEdgeGroup> {
   final _group = _GlassInputGroup();
   @override
-  Widget build(BuildContext context) =>
-      _ScrollEdgeInputScope.maybeOf(context) != null
+  Widget build(BuildContext context) => nativeIOSGlassEnabled
+      ? IOSNativeComposition(child: widget.child)
+      : _ScrollEdgeInputScope.maybeOf(context) != null
       ? widget.child
       : _ScrollEdgeInputScope(
           group:

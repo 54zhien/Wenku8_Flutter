@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import CoreVideo
 
 /// Explicitly enabled by the benchmark only; contains counts, never content.
 private enum WenkuGlassWork {
@@ -13,12 +14,15 @@ private enum WenkuGlassWork {
 /// Native-only prototype. Flutter owns state/routes; this view owns controls.
 final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlugin {
   private let messenger: FlutterBinaryMessenger
+  private let textures: FlutterTextureRegistry
   private weak var registrar: FlutterPluginRegistrar?
   private var menuButton: WenkuMenuButton?
   private var menuResult: FlutterResult?
-  init(messenger: FlutterBinaryMessenger) { self.messenger = messenger }
+  init(messenger: FlutterBinaryMessenger, textures: FlutterTextureRegistry) {
+    self.messenger = messenger; self.textures = textures
+  }
   static func register(with registrar: FlutterPluginRegistrar) {
-    let factory = WenkuGlassFactory(messenger: registrar.messenger())
+    let factory = WenkuGlassFactory(messenger: registrar.messenger(), textures: registrar.textures())
     factory.registrar = registrar
     registrar.register(factory, withId: "org.mewx.wenku8/glass_controls")
     let channel = FlutterMethodChannel(name: "org.mewx.wenku8/glass_presentation", binaryMessenger: registrar.messenger())
@@ -74,7 +78,7 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
   }
   func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
-    WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger)
+    WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger, textures: textures)
   }
 }
 
@@ -91,13 +95,100 @@ private final class WenkuMenuButton: UIButton {
 
 private final class WenkuGlassRoot: UIView {
   var layout: (() -> Void)?
+  var attached: (() -> Void)?
   override func layoutSubviews() { super.layoutSubviews(); layout?() }
-  override func didMoveToWindow() { super.didMoveToWindow(); setNeedsLayout() }
+  override func didMoveToWindow() {
+    super.didMoveToWindow(); setNeedsLayout()
+    if window != nil { attached?() }
+  }
+}
+
+/// Apple requires the hosting WINDOW to be captured for visual effects to
+/// appear. Reuse that image for all control requests in the same main-loop
+/// batch, then release it before the loop sleeps; no timer or idle ticker.
+private enum WenkuWindowCapture {
+  // Cache failed attempts as well: an incomplete Metal/window render must not
+  // trigger the same full-window readback separately for every control.
+  static var images: [ObjectIdentifier: (bounds: CGRect, image: CGImage?)] = [:]
+  static var observer: CFRunLoopObserver?
+  static func image(_ window: UIWindow) -> CGImage? {
+    let key = ObjectIdentifier(window)
+    if let cached = images[key], cached.bounds == window.bounds { return cached.image }
+    guard window.bounds.width > 0, window.bounds.height > 0 else { return nil }
+    if observer == nil {
+      observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue,
+        false, 0) { _, _ in images.removeAll(); observer = nil }
+      CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+    }
+    let format = UIGraphicsImageRendererFormat()
+    format.opaque = false; format.preferredRange = .standard
+    format.scale = min(window.traitCollection.displayScale,
+      sqrt(4_194_304 / (window.bounds.width * window.bounds.height)))
+    var rendered = false
+    let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+      rendered = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+    }
+    WenkuGlassWork.add("window_snapshots")
+    let cg = rendered ? image.cgImage : nil
+    images[key] = (window.bounds, cg)
+    return cg
+  }
+}
+
+/// One bounded, immutable native render per state/layout change. The raster
+/// thread only retains the last pixel buffer; it never asks UIKit to render.
+final class WenkuControlTexture: NSObject, FlutterTexture {
+  private let lock = NSLock()
+  private var pixels: CVPixelBuffer?
+  func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
+    lock.lock(); defer { lock.unlock() }
+    return pixels.map { Unmanaged.passRetained($0) }
+  }
+  func capture(_ view: UIView) -> Bool {
+    guard Thread.isMainThread, let window = view.window,
+      view.bounds.width.isFinite, view.bounds.height.isFinite,
+      view.bounds.width > 0, view.bounds.height > 0 else { return false }
+    view.layoutIfNeeded()
+    guard let image = WenkuWindowCapture.image(window) else { return false }
+    let windowScale = CGFloat(image.width) / window.bounds.width
+    let rect = view.convert(view.bounds, to: window).offsetBy(dx: -window.bounds.minX, dy: -window.bounds.minY)
+    let source = CGRect(x: rect.minX * windowScale, y: rect.minY * windowScale,
+      width: rect.width * windowScale, height: rect.height * windowScale).integral
+    let visible = source.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    guard !visible.isEmpty, let cg = image.cropping(to: visible) else { return false }
+    let scale = min(view.traitCollection.displayScale, sqrt(1_048_576 / (view.bounds.width * view.bounds.height)))
+    let width = max(1, Int(ceil(view.bounds.width * scale)))
+    let height = max(1, Int(ceil(view.bounds.height * scale)))
+    var buffer: CVPixelBuffer?
+    let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height,
+      kCVPixelFormatType_32BGRA,
+      [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferCGImageCompatibilityKey: true,
+       kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary, &buffer)
+    guard status == kCVReturnSuccess, let buffer else { return false }
+    guard CVPixelBufferLockBaseAddress(buffer, []) == kCVReturnSuccess else { return false }
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    guard let base = CVPixelBufferGetBaseAddress(buffer),
+      let context = CGContext(data: base, width: width,
+      height: height, bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+    else { return false }
+    let x = (visible.minX - source.minX) / source.width * CGFloat(width)
+    let y = (source.maxY - visible.maxY) / source.height * CGFloat(height)
+    context.draw(cg, in: CGRect(x: x, y: y,
+      width: visible.width / source.width * CGFloat(width),
+      height: visible.height / source.height * CGFloat(height)))
+    lock.lock(); pixels = buffer; lock.unlock()
+    return true
+  }
 }
 
 private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureRecognizerDelegate, UITabBarControllerDelegate {
   private let root: WenkuGlassRoot
   private let channel: FlutterMethodChannel
+  private let textures: FlutterTextureRegistry
+  private var controlTexture: WenkuControlTexture?
+  private var textureId: Int64?
   private var state: [String: Any]
   private var buttons: [UIButton] = []
   private var slider: UISlider?
@@ -109,25 +200,42 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
   private var lastHeight: CGFloat = 0
   private var surface: UIVisualEffectView?
 
-  init(frame: CGRect, id: Int64, args: [String: Any], messenger: FlutterBinaryMessenger) {
+  init(frame: CGRect, id: Int64, args: [String: Any], messenger: FlutterBinaryMessenger, textures: FlutterTextureRegistry) {
     WenkuGlassWork.add("platform_views_created")
     state = args
+    self.textures = textures
     root = WenkuGlassRoot(frame: frame)
     channel = FlutterMethodChannel(name: "org.mewx.wenku8/glass_controls/\(id)", binaryMessenger: messenger)
     super.init()
+    root.attached = { [weak self] in self?.channel.invokeMethod("attached", arguments: nil) }
     root.backgroundColor = .clear
     createControls()
     update(args)
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self else { result(nil); return }
       if call.method == "state", let value = call.arguments as? [String: Any] { self.update(value); result(nil) }
+      else if call.method == "snapshot" {
+        guard self.slider?.isTracking != true, self.toggle?.isTracking != true,
+          !self.buttons.contains(where: { $0.isTracking }) else { result(nil); return }
+        let texture = self.controlTexture ?? WenkuControlTexture()
+        WenkuGlassWork.add("snapshot_requests")
+        guard texture.capture(self.root) else { result(nil); return }
+        self.controlTexture = texture
+        let id = self.textureId ?? self.textures.register(texture)
+        self.textureId = id
+        self.textures.textureFrameAvailable(id)
+        WenkuGlassWork.add("snapshots_captured")
+        result(["textureId": id, "width": self.root.bounds.width, "height": self.root.bounds.height])
+      }
       else { result(FlutterMethodNotImplemented) }
     }
   }
 
   deinit {
+    if let textureId { textures.unregisterTexture(textureId) }
     channel.setMethodCallHandler(nil)
     root.layout = nil
+    root.attached = nil
     tabs?.willMove(toParent: nil)
     tabs?.view.removeFromSuperview()
     tabs?.removeFromParent()

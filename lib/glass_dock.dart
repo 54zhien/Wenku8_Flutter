@@ -6,6 +6,7 @@ import 'package:flutter/physics.dart';
 
 import 'app_ui.dart';
 import 'ios_glass.dart';
+import 'ios_native_composition.dart';
 
 class GlassDockItem {
   const GlassDockItem(
@@ -255,40 +256,42 @@ class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     if (_usesNativeControls) {
-      return IOSGlassControl(
-        kind: widget.navigation ? 'tabbar' : 'toolbar',
-        width: double.infinity,
-        // Bootstrap only; UIKit reports the actual system bar height.
-        height: 96,
-        onMetrics: (metrics) {
-          if (metrics['height'] case final num height) {
-            if (height.isFinite) {
-              widget.onExtentChanged?.call(height.toDouble());
+      return IOSNativeForeground(
+        child: IOSGlassControl(
+          kind: widget.navigation ? 'tabbar' : 'toolbar',
+          width: double.infinity,
+          // Bootstrap only; UIKit reports the actual system bar height.
+          height: 96,
+          onMetrics: (metrics) {
+            if (metrics['height'] case final num height) {
+              if (height.isFinite) {
+                widget.onExtentChanged?.call(height.toDouble());
+              }
             }
-          }
-        },
-        configuration: {
-          'selectedIndex': widget.selectedIndex,
-          'items': [
-            for (final item in widget.items)
-              {
-                'symbol': iosSystemSymbol(item.icon),
-                'label': item.label,
-                'semanticLabel': item.semanticLabel ?? item.label,
-                'enabled': item.enabled,
-                'selectableOnDrag': item.selectableOnDrag,
-              },
-          ],
-        },
-        onAction: (event) {
-          final index = event['index'];
-          if (index is int &&
-              index >= 0 &&
-              index < widget.items.length &&
-              widget.items[index].enabled) {
-            widget.onSelected(index);
-          }
-        },
+          },
+          configuration: {
+            'selectedIndex': widget.selectedIndex,
+            'items': [
+              for (final item in widget.items)
+                {
+                  'symbol': iosSystemSymbol(item.icon),
+                  'label': item.label,
+                  'semanticLabel': item.semanticLabel ?? item.label,
+                  'enabled': item.enabled,
+                  'selectableOnDrag': item.selectableOnDrag,
+                },
+            ],
+          },
+          onAction: (event) {
+            final index = event['index'];
+            if (index is int &&
+                index >= 0 &&
+                index < widget.items.length &&
+                widget.items[index].enabled) {
+              widget.onSelected(index);
+            }
+          },
+        ),
       );
     }
     _prepareCustomControllers();

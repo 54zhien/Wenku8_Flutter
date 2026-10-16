@@ -1,0 +1,60 @@
+name: iOS composition validation (no package)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/ios-composition-validation']
+
+permissions:
+  contents: read
+
+jobs:
+  native-capture:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.5'
+          channel: stable
+          cache: true
+      - run: python3 tools/check_public_source.py
+      - run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - run: flutter pub get
+      - run: flutter analyze --no-pub
+      - name: Check native-control composition contracts
+        run: flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true test/ios_composition_boundary_test.dart test/ios_scroll_edge_test.dart test/ios_route_motion_test.dart
+      - name: Compile simulator application without packaging
+        run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
+      - name: Select additional iOS 26.2 hosted unit-test target
+        run: |
+          set -euo pipefail
+          mkdir -p build/composition
+          xcrun simctl list devices available --json > build/composition/devices.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          devices = json.loads(Path('build/composition/devices.json').read_text())['devices']
+          phones = [device for runtime, group in devices.items()
+                    if runtime == 'com.apple.CoreSimulator.SimRuntime.iOS-26-2'
+                    for device in group if device.get('isAvailable') and device['name'] == 'iPhone 17 Pro']
+          assert len(phones) == 1, 'Required additional iOS 26.2 hosted target is unavailable'
+          Path('build/composition/target.json').write_text(json.dumps(phones[0], indent=2))
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('COMPOSITION_TEST_UDID=' + phones[0]['udid'] + '\n')
+          PY
+      - name: Execute hosted native capture and protocol tests
+        run: |
+          set -euo pipefail
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests -resultBundlePath build/composition/native-capture.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/composition/native-capture.log
+      - name: Preserve validation evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-composition-validation-${{ github.sha }}
+          path: build/composition
+          if-no-files-found: ignore

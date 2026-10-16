@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wenku8_flutter/ios_glass.dart';
 import 'package:wenku8_flutter/ios_scroll_edge.dart';
+import 'package:wenku8_flutter/easy_glass.dart';
+import 'package:wenku8_flutter/ios_native_composition.dart';
 import 'package:wenku8_flutter/native_effects.dart';
 import 'package:wenku8_flutter/performance_preferences.dart';
 
@@ -27,6 +29,7 @@ Future<ByteData> _capture(
   WidgetTester tester, {
   bool bottom = false,
   bool white = false,
+  bool reference = false,
 }) async {
   final key = GlobalKey();
   await tester.pumpWidget(
@@ -49,12 +52,19 @@ Future<ByteData> _capture(
                   top: 16,
                   width: 200,
                   height: 120,
-                  child: IOSScrollEdge(
-                    blur: 8,
-                    plateau: 60,
-                    fromBottom: bottom,
-                    child: const SizedBox.expand(),
-                  ),
+                  child: reference
+                      ? EasyScrollEdge(
+                          blur: 8,
+                          plateau: 60,
+                          fromBottom: bottom,
+                          child: const SizedBox.expand(),
+                        )
+                      : IOSScrollEdge(
+                          blur: 8,
+                          plateau: 60,
+                          fromBottom: bottom,
+                          child: const SizedBox.expand(),
+                        ),
                 ),
               ],
             ),
@@ -86,54 +96,80 @@ int _contrast(ByteData pixels, int y) {
 }
 
 void main() {
-  testWidgets('scroll edge uses a feather compatible with its renderer', (
-    tester,
-  ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Center(
-          child: SizedBox(
-            width: 200,
-            height: 120,
-            child: NativeBackdrop(
-              effect: NativeEffect.progressive,
-              blur: 8,
-              plateau: 60,
-              child: SizedBox.expand(),
+  testWidgets(
+    'iOS edge matches the upstream continuous feather without radius bands',
+    (tester) async {
+      for (final bottom in [false, true]) {
+        final original = await _capture(
+          tester,
+          bottom: bottom,
+          reference: true,
+        );
+        final current = await _capture(tester, bottom: bottom);
+        var different = 0;
+        for (var index = 0; index < original.lengthInBytes; index++) {
+          if ((original.getUint8(index) - current.getUint8(index)).abs() > 1) {
+            different++;
+          }
+        }
+        expect(
+          different,
+          0,
+          reason:
+              'The native-control port must preserve the original continuous blur pixels',
+        );
+      }
+    },
+  );
+  testWidgets(
+    'scroll edge retains its continuous feather and marks native underlap',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 200,
+              height: 120,
+              child: NativeBackdrop(
+                effect: NativeEffect.progressive,
+                blur: 8,
+                plateau: 60,
+                child: SizedBox.expand(),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is DecoratedBox &&
-            widget.decoration is BoxDecoration &&
-            (widget.decoration as BoxDecoration).backgroundBlendMode ==
-                BlendMode.dstIn,
-      ),
-      nativeIOSGlassEnabled ? findsNothing : findsOneWidget,
-      reason:
-          'UIKit receives the blur mutation but not this Flutter alpha ramp.',
-    );
-    if (nativeIOSGlassEnabled) {
-      expect(
-        find.byType(BackdropFilter),
-        findsWidgets,
-        reason: 'Keep actual blur rather than replacing it with a tint.',
       );
-    }
-    expect(find.byType(ShaderMask), findsNothing);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-    debugDefaultTargetPlatformOverride = null;
-  });
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).backgroundBlendMode ==
+                  BlendMode.dstIn,
+        ),
+        findsOneWidget,
+        reason: 'The continuous upstream feather belongs to the Flutter plane.',
+      );
+      if (nativeIOSGlassEnabled) {
+        expect(
+          find.byType(IOSNativeBlurRegion),
+          findsOneWidget,
+          reason:
+              'Native content under the feather needs the composition boundary.',
+        );
+      }
+      expect(find.byType(ShaderMask), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
 
   testWidgets(
-    'radius feather preserves real blur, clear content and direction',
+    'continuous feather preserves real blur, clear content and direction',
     (tester) async {
       final top = await _capture(tester);
       expect(_contrast(top, 24), lessThan(20));
@@ -169,9 +205,13 @@ void main() {
     }
   });
 
-  testWidgets('clips cover a resized edge once without subpixel gaps', (
+  testWidgets('a resized edge retains one Gaussian pass without radius bands', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     for (final size in [
       const Size(393, 171.3),
       const Size(852, 115.7),
@@ -195,26 +235,13 @@ void main() {
           ),
         ),
       );
-      final filters = find.byType(BackdropFilter);
       expect(
-        filters.evaluate().length,
-        inInclusiveRange(1, 9),
-        reason: 'The feather cost stays bounded in landscape.',
+        tester.layers.where(
+          (layer) => layer.engineLayer is ui.BackdropFilterEngineLayer,
+        ),
+        hasLength(1),
       );
-      final rects =
-          filters
-              .evaluate()
-              .map((element) => tester.getRect(find.byWidget(element.widget)))
-              .toList()
-            ..sort((a, b) => a.top.compareTo(b.top));
-      final edge = tester.getRect(find.byType(IOSScrollEdge));
-      expect(rects.first.top, closeTo(edge.top, .0001));
-      expect(rects.last.bottom, closeTo(edge.bottom, .0001));
-      for (var index = 1; index < rects.length; index++) {
-        expect(rects[index].top, closeTo(rects[index - 1].bottom, .0001));
-        final local = (rects[index].top - edge.top) * 3;
-        expect(local, closeTo(local.roundToDouble(), .0001));
-      }
+      expect(tester.getSize(find.byType(IOSScrollEdge)), size);
       expect(tester.takeException(), isNull);
     }
   });
