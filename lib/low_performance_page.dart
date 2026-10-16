@@ -5,6 +5,7 @@ import 'app_interactions.dart';
 import 'app_ui.dart';
 import 'library_state.dart';
 import 'performance_preferences.dart';
+import 'ios_glass.dart';
 
 class LowPerformancePage extends StatefulWidget {
   const LowPerformancePage({super.key, required this.state});
@@ -62,6 +63,10 @@ class _LowPerformancePageState extends State<LowPerformancePage> {
                 MediaQuery.paddingOf(context).bottom + 32,
               ),
               children: [
+                if (nativeIOSGlassEnabled) ...[
+                  const Text('以下选项只影响书架和内容区域；系统控件外观跟随 iOS 设置。'),
+                  const SizedBox(height: 16),
+                ],
                 ContentPanel(
                   child: _option(
                     title: '低性能设备模式',

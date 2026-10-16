@@ -9,6 +9,7 @@ import 'app_interactions.dart';
 import 'catalog.dart';
 import 'library_state.dart';
 import 'local_platform.dart';
+import 'ios_glass.dart';
 
 sealed class ReaderToolAction {
   const ReaderToolAction();
@@ -294,7 +295,7 @@ class _ReaderToolsState extends State<ReaderTools> {
                       : () => Navigator.pop(context, const ReaderOpenFind()),
                   child: const Text('章内查找'),
                 ),
-                if (LocalPlatform.android)
+                if (LocalPlatform.mobile)
                   AnimatedBuilder(
                     animation: widget.state.readerBehaviorChanges,
                     builder: (context, _) => Row(
@@ -565,56 +566,91 @@ class _ReaderValueSliderState extends State<ReaderValueSlider> {
           ),
         ],
       ),
-      Semantics(
-        key: ValueKey('reader-slider-semantics-${widget.label}'),
-        label: widget.label,
-        value: widget.format(_draft),
-        increasedValue: widget.format(
-          (_draft + _unit).clamp(widget.min, widget.max),
-        ),
-        decreasedValue: widget.format(
-          (_draft - _unit).clamp(widget.min, widget.max),
-        ),
-        slider: true,
-        enabled: widget.onCommitted != null,
-        onIncrease: widget.onCommitted == null || _draft >= widget.max
-            ? null
-            : () => _adjust(1),
-        onDecrease: widget.onCommitted == null || _draft <= widget.min
-            ? null
-            : () => _adjust(-1),
-        child: ExcludeSemantics(
-          child: Listener(
-            onPointerCancel: (_) {
-              _pointerCancelled = _dragging;
-              _finish();
-            },
-            child: CupertinoSlider(
-              key: widget.sliderKey,
-              value: _draft.clamp(widget.min, widget.max),
-              min: widget.min,
-              max: widget.max,
-              divisions: widget.divisions,
-              activeColor: Theme.of(context).colorScheme.primary,
-              onChanged: widget.onCommitted == null ? null : _change,
-              onChangeStart: (_) {
-                _pointerCancelled = false;
-                _dragging = true;
-                widget.onInteractionChanged?.call(true);
+      if (nativeIOSGlassEnabled)
+        IOSGlassControl(
+          key: widget.sliderKey,
+          kind: 'slider',
+          height: 44,
+          configuration: {
+            'label': widget.label,
+            'value': _draft.clamp(widget.min, widget.max),
+            'min': widget.min,
+            'max': widget.max,
+            'divisions': widget.divisions,
+            'enabled': widget.onCommitted != null,
+          },
+          onAction: (event) {
+            if (widget.onCommitted == null) return;
+            if (event['phase'] == 'start') {
+              _dragging = true;
+              widget.onInteractionChanged?.call(true);
+              return;
+            }
+            final value = event['value'];
+            if (value is! num || !value.isFinite) return;
+            if (event['phase'] == 'end') {
+              _draft = value.toDouble().clamp(widget.min, widget.max);
+              if (_dragging) {
+                _finish();
+              } else {
+                widget.onCommitted?.call(_draft);
+              }
+            } else {
+              _change(value.toDouble());
+            }
+          },
+        )
+      else
+        Semantics(
+          key: ValueKey('reader-slider-semantics-${widget.label}'),
+          label: widget.label,
+          value: widget.format(_draft),
+          increasedValue: widget.format(
+            (_draft + _unit).clamp(widget.min, widget.max),
+          ),
+          decreasedValue: widget.format(
+            (_draft - _unit).clamp(widget.min, widget.max),
+          ),
+          slider: true,
+          enabled: widget.onCommitted != null,
+          onIncrease: widget.onCommitted == null || _draft >= widget.max
+              ? null
+              : () => _adjust(1),
+          onDecrease: widget.onCommitted == null || _draft <= widget.min
+              ? null
+              : () => _adjust(-1),
+          child: ExcludeSemantics(
+            child: Listener(
+              onPointerCancel: (_) {
+                _pointerCancelled = _dragging;
+                _finish();
               },
-              onChangeEnd: (value) {
-                if (_pointerCancelled) return;
-                if (_dragging) {
-                  _draft = value.clamp(widget.min, widget.max);
-                  _finish();
-                } else {
-                  widget.onCommitted?.call(value);
-                }
-              },
+              child: CupertinoSlider(
+                key: widget.sliderKey,
+                value: _draft.clamp(widget.min, widget.max),
+                min: widget.min,
+                max: widget.max,
+                divisions: widget.divisions,
+                activeColor: Theme.of(context).colorScheme.primary,
+                onChanged: widget.onCommitted == null ? null : _change,
+                onChangeStart: (_) {
+                  _pointerCancelled = false;
+                  _dragging = true;
+                  widget.onInteractionChanged?.call(true);
+                },
+                onChangeEnd: (value) {
+                  if (_pointerCancelled) return;
+                  if (_dragging) {
+                    _draft = value.clamp(widget.min, widget.max);
+                    _finish();
+                  } else {
+                    widget.onCommitted?.call(value);
+                  }
+                },
+              ),
             ),
           ),
         ),
-      ),
     ],
   );
 }

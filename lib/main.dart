@@ -11,6 +11,7 @@ import 'app_typography.dart';
 import 'catalog.dart';
 import 'legacy_wenku_repository.dart';
 import 'library_state.dart';
+import 'local_platform.dart';
 import 'listening/audio_output.dart';
 import 'listening/cache.dart';
 import 'listening/controller.dart';
@@ -43,16 +44,16 @@ Future<void> main() async {
   };
   SystemChrome.setSystemUIOverlayStyle(novelSystemUiStyle(brightness));
   final remote = LegacyWenkuRepository();
-  final repository = defaultTargetPlatform == TargetPlatform.android
+  final repository = LocalPlatform.mobile
       ? OfflineNovelRepository(
           remote: remote,
           cache: await OfflineCacheStore.forApp(),
         )
       : const DemoNovelRepository();
-  final features = defaultTargetPlatform == TargetPlatform.android
+  final features = LocalPlatform.mobile
       ? WenkuFeatures(account: WenkuAccount(), publications: remote)
       : null;
-  final listening = defaultTargetPlatform == TargetPlatform.android
+  final listening = LocalPlatform.mobile
       ? ListeningController(
           repository: repository,
           audio: await SpeechAudioCache.forApp(),

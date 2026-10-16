@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
 import 'app_ui.dart';
+import 'ios_glass.dart';
 
 class GlassDockItem {
   const GlassDockItem(
@@ -226,94 +227,127 @@ class _GlassDockState extends State<GlassDock> with TickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    // The phone Gallery's three-item capsule is about 187 x 52 logical pixels.
-    // Keep a similarly compact footprint, with a 48px inner touch target.
-    height: 54,
-    width: 196,
-    child: AnimatedBuilder(
-      animation: _motion,
-      builder: (context, child) {
-        final pressure = _reduceMotion ? 0.0 : _press.value.clamp(0.0, 1.0);
-        final flow = _reduceMotion ? 0.0 : _stretch.value;
-        return Transform.translate(
-          offset: Offset(flow * .16, -pressure * .6),
-          child: Transform.scale(
-            key: const ValueKey('dock-whole-capsule-transform'),
-            scaleX: 1 + pressure * .022 + flow.abs() * .00125,
-            scaleY: 1 + pressure * .065 - flow.abs() * .0006,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: LiquidGlass(
-                      key: const ValueKey('dock-fluid-surface'),
-                      radius: 27,
-                      thickness: 16 + pressure * 2,
-                      activation: pressure,
-                      touchPosition: (_position.value.clamp(0.0, 2.0) + .5) / 3,
-                      elevated: false,
-                      child: const SizedBox.expand(),
+  Widget build(BuildContext context) {
+    if (nativeIOSGlassEnabled &&
+        widget.items.every((item) => iosSystemSymbol(item.icon) != null)) {
+      return IOSGlassControl(
+        kind: 'dock',
+        width: 196,
+        height: 54,
+        configuration: {
+          'selectedIndex': widget.selectedIndex,
+          'items': [
+            for (final item in widget.items)
+              {
+                'symbol': iosSystemSymbol(item.icon),
+                'label': item.label,
+                'semanticLabel': item.semanticLabel ?? item.label,
+                'enabled': item.enabled,
+                'selectableOnDrag': item.selectableOnDrag,
+              },
+          ],
+        },
+        onAction: (event) {
+          final index = event['index'];
+          if (index is int &&
+              index >= 0 &&
+              index < widget.items.length &&
+              widget.items[index].enabled) {
+            widget.onSelected(index);
+          }
+        },
+      );
+    }
+    return SizedBox(
+      // The phone Gallery's three-item capsule is about 187 x 52 logical pixels.
+      // Keep a similarly compact footprint, with a 48px inner touch target.
+      height: 54,
+      width: 196,
+      child: AnimatedBuilder(
+        animation: _motion,
+        builder: (context, child) {
+          final pressure = _reduceMotion ? 0.0 : _press.value.clamp(0.0, 1.0);
+          final flow = _reduceMotion ? 0.0 : _stretch.value;
+          return Transform.translate(
+            offset: Offset(flow * .16, -pressure * .6),
+            child: Transform.scale(
+              key: const ValueKey('dock-whole-capsule-transform'),
+              scaleX: 1 + pressure * .022 + flow.abs() * .00125,
+              scaleY: 1 + pressure * .065 - flow.abs() * .0006,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: LiquidGlass(
+                        key: const ValueKey('dock-fluid-surface'),
+                        radius: 27,
+                        thickness: 16 + pressure * 2,
+                        activation: pressure,
+                        touchPosition:
+                            (_position.value.clamp(0.0, 2.0) + .5) / 3,
+                        elevated: false,
+                        child: const SizedBox.expand(),
+                      ),
                     ),
                   ),
-                ),
-                Positioned.fill(
-                  child: GlassForeground(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          _segmentWidth = constraints.maxWidth / 3;
-                          return Listener(
-                            onPointerDown: _down,
-                            onPointerUp: (event) {
-                              if (event.pointer == _pointer) _release();
-                            },
-                            onPointerCancel: (event) {
-                              if (event.pointer == _pointer) {
-                                _pointerCancelled = true;
-                                _cancel();
-                              }
-                            },
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTapUp: (details) {
-                                if (!_dragging && !_pointerCancelled) {
-                                  _commit(
-                                    _fingerPosition(
-                                      details.localPosition.dx,
-                                    ).round().clamp(0, 2),
-                                  );
+                  Positioned.fill(
+                    child: GlassForeground(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            _segmentWidth = constraints.maxWidth / 3;
+                            return Listener(
+                              onPointerDown: _down,
+                              onPointerUp: (event) {
+                                if (event.pointer == _pointer) _release();
+                              },
+                              onPointerCancel: (event) {
+                                if (event.pointer == _pointer) {
+                                  _pointerCancelled = true;
+                                  _cancel();
                                 }
                               },
-                              onHorizontalDragStart: _dragStart,
-                              onHorizontalDragUpdate: _dragUpdate,
-                              onHorizontalDragEnd: _dragEnd,
-                              onHorizontalDragCancel: _cancel,
-                              child: Row(
-                                children: [
-                                  for (var index = 0; index < 3; index++)
-                                    _nav(index, widget.items[index]),
-                                ],
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTapUp: (details) {
+                                  if (!_dragging && !_pointerCancelled) {
+                                    _commit(
+                                      _fingerPosition(
+                                        details.localPosition.dx,
+                                      ).round().clamp(0, 2),
+                                    );
+                                  }
+                                },
+                                onHorizontalDragStart: _dragStart,
+                                onHorizontalDragUpdate: _dragUpdate,
+                                onHorizontalDragEnd: _dragEnd,
+                                onHorizontalDragCancel: _cancel,
+                                child: Row(
+                                  children: [
+                                    for (var index = 0; index < 3; index++)
+                                      _nav(index, widget.items[index]),
+                                  ],
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
-    ),
-  );
+          );
+        },
+      ),
+    );
+  }
 
   Widget _nav(int index, GlassDockItem item) {
     final proximity = (1 - (_position.value - index).abs()).clamp(0.0, 1.0);

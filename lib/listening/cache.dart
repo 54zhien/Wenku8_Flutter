@@ -27,7 +27,7 @@ class SpeechAudioCache implements SpeechAudioSource {
   final Map<String, ({SpeechCancellation token, Future<File> future})>
   _pending = {};
   Future<void> _nativeQueue = Future.value();
-  final Set<String> _protected = {};
+  final Set<Uri> _protected = {};
   static const maximumBytes = 96 * 1024 * 1024;
   static Future<SpeechAudioCache> forApp() async => SpeechAudioCache(
     Directory('${(await getTemporaryDirectory()).path}/listening-audio-v1'),
@@ -234,12 +234,12 @@ class SpeechAudioCache implements SpeechAudioSource {
 
   @override
   void protect(File file) {
-    _protected.add(file.path);
+    _protected.add(file.absolute.uri.normalizePath());
   }
 
   @override
   void unprotect(File file) {
-    _protected.remove(file.path);
+    _protected.remove(file.absolute.uri.normalizePath());
   }
 
   @override
@@ -251,7 +251,8 @@ class SpeechAudioCache implements SpeechAudioSource {
       return;
     }
     try {
-      if (await file.exists() && !_protected.contains(file.path)) {
+      if (await file.exists() &&
+          !_protected.contains(file.absolute.uri.normalizePath())) {
         await file.delete();
       }
     } on FileSystemException {
@@ -272,7 +273,9 @@ class SpeechAudioCache implements SpeechAudioSource {
     var bytes = entries.fold<int>(0, (sum, e) => sum + e.stat.size);
     for (final entry in entries) {
       if (bytes <= maximumBytes) break;
-      if (_protected.contains(entry.file.path)) continue;
+      if (_protected.contains(entry.file.absolute.uri.normalizePath())) {
+        continue;
+      }
       try {
         await entry.file.delete();
         bytes -= entry.stat.size;

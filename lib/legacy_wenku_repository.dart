@@ -36,20 +36,34 @@ List<int> _decodeSearchIds(String source) {
   ];
 }
 
-String _normalizeBody(String source) => source
-    .replaceAllMapped(RegExp(r'<!--image-->(.*?)<!--image-->', dotAll: true), (
-      match,
-    ) {
-      final url = readerIllustrationUrl(
-        '<!--image-->${match[1]!.trim()}<!--image-->',
-      );
-      return '\n\n${url == null ? '[插图]' : '<!--image-->$url<!--image-->'}\n\n';
-    })
-    .replaceAll(RegExp(r'\r\n?'), '\n')
-    .split('\n')
-    .map((line) => line.trim())
-    .where((line) => line.isNotEmpty)
-    .join('\n\n');
+String _normalizeBody(String source) {
+  final text = source.trim();
+  final code = wenkuResponseCode(text);
+  if (code != null) throw WenkuApiError(code);
+  final lower = text.toLowerCase();
+  if (text.isEmpty ||
+      lower.startsWith('<html') ||
+      lower.startsWith('<!doctype html') ||
+      lower.startsWith('<error') ||
+      (lower.startsWith('<?xml') && lower.contains('<error')) ||
+      (lower.startsWith('<') && lower.contains('<html'))) {
+    throw const FormatException('章节接口未返回有效正文，请稍后重试');
+  }
+  return source
+      .replaceAllMapped(RegExp(r'<!--image-->(.*?)<!--image-->', dotAll: true), (
+        match,
+      ) {
+        final url = readerIllustrationUrl(
+          '<!--image-->${match[1]!.trim()}<!--image-->',
+        );
+        return '\n\n${url == null ? '[插图]' : '<!--image-->$url<!--image-->'}\n\n';
+      })
+      .replaceAll(RegExp(r'\r\n?'), '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .join('\n\n');
+}
 
 /// Android v1.30 protocol adapter. The bridge keeps the original POST envelope;
 /// this class only maps its existing XML responses into Flutter view models.

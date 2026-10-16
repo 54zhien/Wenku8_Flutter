@@ -6,6 +6,8 @@
 
 ## 原版 API 运行库：libcpp.so
 
+本地 iOS 26 移植候选（2026-10-16）新增 Swift 平台桥接与系统控件适配，保留原项目署名与许可。iOS 实现不包含或调用下述 Android 运行库；其旧版联网协议兼容性及原生构建状态见 [iOS 说明](IOS.md)。
+
 - 路径：`android/app/src/main/jniLibs/<abi>/libcpp.so`。
 - 用途：现有文库联网接口的 JNI 运行库。
 - 本分支不修改、不解包、不重新实现该二进制。

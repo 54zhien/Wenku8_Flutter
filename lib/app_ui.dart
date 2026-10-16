@@ -11,6 +11,7 @@ import 'catalog.dart';
 import 'cover_arrival.dart';
 import 'glass_optics.dart';
 import 'legacy_cover.dart';
+import 'ios_glass.dart';
 import 'loading_ui.dart';
 import 'motion_ui.dart';
 import 'native_effects.dart';
@@ -519,32 +520,46 @@ class GlassIconButton extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    enabled: onPressed != null,
-    child: Tooltip(
-      message: label,
-      triggerMode: TooltipTriggerMode.manual,
-      excludeFromSemantics: true,
-      child: LiquidGlass(
-        radius: 24,
-        elevated: false,
-        semanticLabel: label,
-        onTap: onPressed,
-        child: SizedBox(
-          width: 46,
-          height: 46,
-          child: Icon(
-            icon,
-            size: 21,
-            color:
-                color ??
-                (onPressed == null ? Theme.of(context).disabledColor : null),
+  Widget build(BuildContext context) {
+    if (nativeIOSGlassEnabled && iosSystemSymbol(icon) != null) {
+      return IOSGlassControl(
+        kind: 'button',
+        width: 46,
+        configuration: {
+          'label': label,
+          'symbol': iosSystemSymbol(icon),
+          'enabled': onPressed != null,
+        },
+        onAction: (_) => onPressed?.call(),
+      );
+    }
+    return Semantics(
+      button: true,
+      enabled: onPressed != null,
+      child: Tooltip(
+        message: label,
+        triggerMode: TooltipTriggerMode.manual,
+        excludeFromSemantics: true,
+        child: LiquidGlass(
+          radius: 24,
+          elevated: false,
+          semanticLabel: label,
+          onTap: onPressed,
+          child: SizedBox(
+            width: 46,
+            height: 46,
+            child: Icon(
+              icon,
+              size: 21,
+              color:
+                  color ??
+                  (onPressed == null ? Theme.of(context).disabledColor : null),
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class GlassPillButton extends StatelessWidget {
@@ -562,6 +577,23 @@ class GlassPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (nativeIOSGlassEnabled && iosSystemSymbol(icon) != null) {
+      return IOSGlassControl(
+        kind: 'button',
+        width: 196,
+        height: 54,
+        configuration: {
+          'label': label,
+          'symbol': iosSystemSymbol(icon),
+          'showLabel': true,
+          'loading': loading,
+          'enabled': !loading && onPressed != null,
+        },
+        onAction: (_) {
+          if (!loading) onPressed?.call();
+        },
+      );
+    }
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final action = loading ? null : onPressed;

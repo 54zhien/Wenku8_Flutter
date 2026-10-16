@@ -1,0 +1,66 @@
+name: iOS 26 candidate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
+  push:
+    branches: ['codex/ios26-port']
+    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.5'
+          channel: stable
+          cache: true
+      - name: Check SDK and select iOS 26 simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/ios-devices.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'ios-devices.json').read_text())
+          candidates = [device for runtime, devices in data['devices'].items()
+                        if '.iOS-' in runtime and int(runtime.split('.iOS-')[1].split('-')[0]) >= 26
+                        for device in devices if device['isAvailable'] and device['name'].startswith('iPhone')]
+          if not candidates:
+              raise SystemExit('No iOS 26+ iPhone simulator is installed')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('udid=' + candidates[0]['udid'] + '\n')
+          PY
+      - run: python3 tools/check_public_source.py
+      - run: flutter pub get
+      - run: flutter analyze --no-pub
+      - run: flutter test --no-pub
+      - name: Execute Foundation protocol tests
+        run: |
+          swiftc -parse-as-library ios/Runner/WenkuProtocol.swift ios/Runner/WenkuControlPolicy.swift native_tests/WenkuProtocolTests.swift -o "$RUNNER_TEMP/wenku-protocol-tests"
+          "$RUNNER_TEMP/wenku-protocol-tests"
+      - name: Compile native-glass simulator candidate
+        run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
+      - name: Run native iOS tests
+        run: |
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.simulator.outputs.udid }}' -resultBundlePath build/ios/native-tests.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Save test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios26-test-evidence
+          path: build/ios/native-tests.xcresult
+          if-no-files-found: ignore

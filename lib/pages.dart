@@ -1538,7 +1538,7 @@ class SettingsPage extends StatelessWidget {
                   onCommitted: (value) =>
                       _savePreference(context, () => state.setFontSize(value)),
                 ),
-                if (LocalPlatform.android)
+                if (LocalPlatform.mobile)
                   Row(
                     children: [
                       Icon(
@@ -1724,7 +1724,7 @@ class SettingsPage extends StatelessWidget {
               ],
             ),
           ),
-          if (LocalPlatform.android) ...[
+          if (LocalPlatform.mobile) ...[
             const SizedBox(height: 14),
             FeatureEntry(
               key: const ValueKey('settings-legacy-import'),
