@@ -228,7 +228,9 @@ void main() {
       for (var repeat = 0; repeat < 5; repeat++) {
         expect(find.byType(ReadingHistoryPage), findsNothing);
         await tester.tap(find.text('阅读历史'));
-        await tester.pump();
+        // HeroController lays a newly pushed route out offstage for its first
+        // frame. Keep the complete push in record(), then inspect its landing.
+        await tester.pumpAndSettle();
         final page = find.byType(ReadingHistoryPage);
         expect(page, findsOneWidget);
         final route = ModalRoute.of(tester.element(page))!;
@@ -237,7 +239,6 @@ void main() {
           route.reverseTransitionDuration,
           const Duration(milliseconds: 320),
         );
-        await tester.pumpAndSettle();
         expect(tester.getTopLeft(page).dx, closeTo(0, .001));
         Navigator.of(tester.element(page)).pop();
         await tester.pumpAndSettle();
