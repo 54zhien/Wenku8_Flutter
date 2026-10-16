@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:integration_test/integration_test.dart';
 
 /// XCTest enables native accessibility as it attaches to the test host. Wait
@@ -12,12 +13,28 @@ Future<void> awaitNativeTestHost(
 ) async {
   const run = String.fromEnvironment('WENKU_TEST_RUN_ID');
   if (run.isEmpty) return; // Normal flutter test/drive owns its own startup.
+  const budget = Duration(seconds: 240);
+  final elapsed = Stopwatch()..start();
+  debugPrint('WENKU_NATIVE_HOST waiting $run in ${Directory.systemTemp.path}');
   await waitForNativeTestHostFile(
     File('${Directory.systemTemp.path}/wenku-host-$run'),
+    timeout: budget,
   );
+  debugPrint('WENKU_NATIVE_HOST marker ready');
+  // Native entrypoints have not called pumpWidget yet. Attach an empty root so
+  // frame draining never depends on the first test creating the render tree.
+  runApp(const SizedBox.shrink());
   // Process native semantics activation before the first tester's leak count.
-  await binding.endOfFrame;
-  await binding.endOfFrame;
+  final remaining = budget - elapsed.elapsed;
+  if (remaining <= Duration.zero) {
+    throw TimeoutException('Native host readiness budget exhausted', budget);
+  }
+  await (() async {
+    await binding.endOfFrame;
+    debugPrint('WENKU_NATIVE_HOST first frame');
+    await binding.endOfFrame;
+    debugPrint('WENKU_NATIVE_HOST frames ready');
+  })().timeout(remaining);
 }
 
 /// iOS has no dart:io filesystem watcher. This bounded readiness check happens

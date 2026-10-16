@@ -25,6 +25,7 @@ source = <<~OBJC
   - (void)testDartIntegration {
     NSString *readyPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wenku-host-#{run_id}"];
     XCTAssertTrue([[NSData data] writeToFile:readyPath atomically:YES], @"Cannot signal the native test-host readiness");
+    NSLog(@"WENKU_NATIVE_HOST ready %@", readyPath);
     IntegrationTestPlugin *plugin = [IntegrationTestPlugin instance];
     NSPredicate *predicate = [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
       return plugin.testResults != nil;
