@@ -3,10 +3,10 @@ name: iOS 26 candidate
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
+    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'integration_test/ios_motion_benchmark_test.dart', 'tools/ci_boot_ios_simulator.py', 'tools/test_ci_boot_ios_simulator.py', 'tools/configure_ios_ui_tests.rb', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
   push:
     branches: ['codex/ios26-port']
-    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
+    paths: ['lib/**', 'test/**', 'ios/**', 'native_tests/**', 'integration_test/ios_motion_benchmark_test.dart', 'tools/ci_boot_ios_simulator.py', 'tools/test_ci_boot_ios_simulator.py', 'tools/configure_ios_ui_tests.rb', 'third_party/**', 'shaders/**', 'assets/**', 'pubspec.*', '.github/workflows/ios.yml']
 
 permissions:
   contents: read
@@ -123,6 +123,7 @@ jobs:
           channel: stable
           cache: true
       - name: Check SDK and select iOS 26 simulator
+        timeout-minutes: 8
         id: simulator
         shell: bash
         run: |

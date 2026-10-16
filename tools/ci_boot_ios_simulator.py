@@ -60,10 +60,13 @@ def main():
         if args.udid:
             command += ['--args', '-CurrentDeviceUDID', args.udid]
         run('display-session', command, 15)
-        run('devices-before', ['xcrun', 'simctl', 'list', 'devices', '--json'], 10)
         if args.initialize:
+            # Launch only: CoreSimulator may still be mounting runtime images.
+            # Workflow device discovery and the later boot/image gate remain
+            # mandatory after tool setup; this stage cannot certify readiness.
             status = 0
             return status
+        run('devices-before', ['xcrun', 'simctl', 'list', 'devices', '--json'], 10)
         if args.shutdown:
             inventory = json.loads((args.output / 'devices-before.txt').read_text())
             previous = next((device for devices in inventory['devices'].values()

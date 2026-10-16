@@ -11,7 +11,7 @@ import ci_boot_ios_simulator as boot
 
 
 class SimulatorGateTests(unittest.TestCase):
-    def exercise(self, *, initialize=False, timeout=False, image_failure=False):
+    def exercise(self, *, initialize=False, timeout=False, image_failure=False, inventory_timeout=False, display_failure=False):
         commands = []
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary) / 'evidence'
@@ -21,10 +21,12 @@ class SimulatorGateTests(unittest.TestCase):
             def execute(command, *, stdout, **options):
                 commands.append(command)
                 if command[:4] == ['xcrun', 'simctl', 'list', 'devices']:
+                    if inventory_timeout:
+                        raise subprocess.TimeoutExpired(command, options['timeout'])
                     stdout.write(b'{"devices": {}}')
                 if command[:3] == ['xcrun', 'simctl', 'bootstatus'] and timeout:
                     raise subprocess.TimeoutExpired(command, options['timeout'])
-                code = 1 if image_failure and 'screenshot' in command else 0
+                code = 1 if ((image_failure and 'screenshot' in command) or (display_failure and command[0] == 'open')) else 0
                 return subprocess.CompletedProcess(command, code)
 
             with patch.object(boot.sys, 'platform', 'darwin'), \
@@ -45,6 +47,16 @@ class SimulatorGateTests(unittest.TestCase):
         self.assertFalse(any('bootstatus' in command for command in commands))
         self.assertFalse(any('screenshot' in command for command in commands))
         self.assertEqual(next(stage for stage in evidence if stage['stage'] == 'display-session')['exit_code'], 0)
+
+    def test_cold_inventory_is_not_the_display_launch_gate(self):
+        status, evidence, _ = self.exercise(initialize=True, inventory_timeout=True)
+        self.assertEqual(status, 0)
+        self.assertFalse(any(stage['stage'] == 'devices-before' for stage in evidence))
+        self.assertTrue(next(stage for stage in evidence if stage['stage'] == 'devices-after')['timed_out'])
+
+    def test_display_launch_failure_still_fails_initialization(self):
+        status, _, _ = self.exercise(initialize=True, display_failure=True)
+        self.assertEqual(status, 1)
 
     def test_timeout_fails_once_and_keeps_diagnostics(self):
         status, evidence, commands = self.exercise(timeout=True)
