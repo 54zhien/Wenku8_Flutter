@@ -61,6 +61,10 @@ def main():
             # default, so workflow callers must discover/select the device first.
             run('devices-before', ['xcrun', 'simctl', 'list', 'devices', '--json'], 10)
             inventory = json.loads((args.output / 'devices-before.txt').read_text())
+            target = next((device for devices in inventory['devices'].values()
+                           for device in devices if device['udid'] == args.udid), None)
+            if target is None:
+                raise RuntimeError('Selected simulator is missing from inventory')
             for devices in inventory['devices'].values():
                 for device in devices:
                     identifier = device['udid']
@@ -68,6 +72,14 @@ def main():
                         continue
                     if args.shutdown_others or identifier == args.shutdown:
                         run(f'shutdown-{identifier}', ['xcrun', 'simctl', 'shutdown', identifier], 20)
+            # One boot owner. Simulator GUI and bootstatus -b can race and
+            # fail with SimError 405 (already Booted), as preserved in CI.
+            # Admission plus GUI setup and readiness share the original 360s.
+            boot_deadline = time.monotonic() + 360
+            if target['state'] == 'Shutdown':
+                run('boot-start', ['xcrun', 'simctl', 'boot', args.udid], 30)
+            elif target['state'] not in ('Booting', 'Booted'):
+                raise RuntimeError(f'Selected simulator cannot start from {target["state"]}')
         developer = subprocess.check_output(['xcode-select', '-p'], timeout=10,
                                             text=True).strip()
         simulator = Path(developer) / 'Applications/Simulator.app'
@@ -79,8 +91,10 @@ def main():
             # GUI launch only; this mode is not used by the device workflows.
             status = 0
             return status
-        # bootstatus -b handles an already-booted device and the initial boot.
-        run('boot-readiness', ['xcrun', 'simctl', 'bootstatus', args.udid, '-b'], 360)
+        remaining = min(360, boot_deadline - time.monotonic())
+        if remaining <= 0:
+            raise RuntimeError('Original 360-second boot budget was exhausted')
+        run('boot-readiness', ['xcrun', 'simctl', 'bootstatus', args.udid], remaining)
         run('ready-image', ['xcrun', 'simctl', 'io', args.udid, 'screenshot',
                             str(args.output / 'ready.png')], 15)
         status = 0

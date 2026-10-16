@@ -141,7 +141,7 @@ jobs:
         run: |
           set -euo pipefail
           simulator='${{ steps.simulator.outputs.udid }}'
-          xcrun simctl bootstatus "$simulator" -b
+          xcrun simctl bootstatus "$simulator"
           xcrun simctl install "$simulator" build/ios/iphonesimulator/Runner.app
           xcrun simctl launch "$simulator" org.mewx.wenku8Flutter
           mkdir -p build/ios/previews
