@@ -9,6 +9,12 @@ private enum WenkuGlassWork {
   static func add(_ event: String) {
     if recording { counts[event, default: 0] += 1 }
   }
+  static func snapshotDuration(_ start: CFTimeInterval) {
+    guard recording else { return }
+    let elapsed = Int((CACurrentMediaTime() - start) * 1_000_000)
+    counts["window_snapshot_total_us", default: 0] += elapsed
+    counts["window_snapshot_max_us"] = max(counts["window_snapshot_max_us", default: 0], elapsed)
+  }
 }
 
 /// Native-only prototype. Flutter owns state/routes; this view owns controls.
@@ -109,7 +115,7 @@ private final class WenkuGlassRoot: UIView {
 private enum WenkuWindowCapture {
   // Cache failed attempts as well: an incomplete Metal/window render must not
   // trigger the same full-window readback separately for every control.
-  static var images: [ObjectIdentifier: (bounds: CGRect, image: CGImage?)] = [:]
+  static var images: [ObjectIdentifier: (window: UIWindow, bounds: CGRect, image: CGImage?)] = [:]
   static var observer: CFRunLoopObserver?
   static func image(_ window: UIWindow) -> CGImage? {
     let key = ObjectIdentifier(window)
@@ -124,13 +130,15 @@ private enum WenkuWindowCapture {
     format.opaque = false; format.preferredRange = .standard
     format.scale = min(window.traitCollection.displayScale,
       sqrt(4_194_304 / (window.bounds.width * window.bounds.height)))
+    let started = CACurrentMediaTime()
+    defer { WenkuGlassWork.snapshotDuration(started) }
     var rendered = false
     let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
       rendered = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
     }
     WenkuGlassWork.add("window_snapshots")
     let cg = rendered ? image.cgImage : nil
-    images[key] = (window.bounds, cg)
+    images[key] = (window, window.bounds, cg)
     return cg
   }
 }
@@ -173,6 +181,7 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
       space: CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
     else { return false }
+    context.clear(CGRect(x: 0, y: 0, width: width, height: height))
     let x = (visible.minX - source.minX) / source.width * CGFloat(width)
     let y = (source.maxY - visible.maxY) / source.height * CGFloat(height)
     context.draw(cg, in: CGRect(x: x, y: y,

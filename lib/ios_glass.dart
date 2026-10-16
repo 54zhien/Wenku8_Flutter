@@ -77,6 +77,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   double? _measuredHeight;
   Object? _lastSent;
   IOSNativeScene? _scene;
+  int _captureRevision = 0;
   int? _textureId;
   Size? _captureSize;
   final _pointers = <int>{};
@@ -91,14 +92,22 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   }
 
   void _queueCapture() {
-    if (!mounted ||
+    if (!const bool.fromEnvironment(
+          'WENKU8_ROUTE_TEXTURE',
+          defaultValue: true,
+        ) ||
+        !mounted ||
+        // A window crop includes Flutter labels painted above a passive
+        // material. Replaying it behind those labels would paint them twice.
+        widget.kind == 'surface' ||
         _channel == null ||
         !_captureNeeded ||
         _captureQueued ||
         _capturing ||
-        _captureAttempts >= 3 ||
+        _captureAttempts >= 1 ||
         _pointers.isNotEmpty ||
-        (_scene?.moving ?? false)) {
+        (_scene?.moving ?? false) ||
+        (_scene?.scrolling ?? false)) {
       return;
     }
     _captureQueued = true;
@@ -109,7 +118,8 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
           !_captureNeeded ||
           _capturing ||
           _pointers.isNotEmpty ||
-          (_scene?.moving ?? false)) {
+          (_scene?.moving ?? false) ||
+          (_scene?.scrolling ?? false)) {
         return;
       }
       final generation = _generation;
@@ -122,8 +132,9 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
         if (!mounted) return;
         final id = result?['textureId'];
         if (generation == _generation && id is int && id >= 0) {
+          final changed = _captureNeeded || _textureId != id;
           _captureNeeded = false;
-          if (_textureId != id) setState(() => _textureId = id);
+          if (changed) setState(() => _textureId = id);
         }
       } on PlatformException {
         // Preserve the visible native control when capture is unavailable.
@@ -140,6 +151,16 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
   void _pointerEnded(PointerEvent event) {
     setState(() => _pointers.remove(event.pointer));
     _invalidateCapture();
+  }
+
+  void _compositionChanged() {
+    final revision = _scene?.captureRevision ?? 0;
+    if (_captureRevision != revision) {
+      _captureRevision = revision;
+      setState(_invalidateCapture);
+    } else {
+      _queueCapture();
+    }
   }
 
   Map<String, Object?> get _configuration => {
@@ -221,9 +242,10 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
     super.didChangeDependencies();
     final scene = IOSNativeComposition.maybeOf(context);
     if (scene != _scene) {
-      _scene?.removeListener(_queueCapture);
+      _scene?.removeListener(_compositionChanged);
       _scene = scene;
-      _scene?.addListener(_queueCapture);
+      _captureRevision = scene?.captureRevision ?? 0;
+      _scene?.addListener(_compositionChanged);
     }
     _sync();
     _queueCapture();
@@ -231,7 +253,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
 
   @override
   void dispose() {
-    _scene?.removeListener(_queueCapture);
+    _scene?.removeListener(_compositionChanged);
     _channel?.setMethodCallHandler(null);
     _channel = null;
     super.dispose();
@@ -254,7 +276,7 @@ class _IOSGlassControlState extends State<IOSGlassControl> {
           onPointerUp: _pointerEnded,
           onPointerCancel: _pointerEnded,
           child: IOSNativeControlPlane(
-            textureId: _textureId,
+            textureId: _captureNeeded ? null : _textureId,
             interacting: _pointers.isNotEmpty,
             child: UiKitView(
               viewType: 'org.mewx.wenku8/glass_controls',

@@ -30,8 +30,8 @@ class _IOSNativeCompositionState extends State<IOSNativeComposition> {
   Widget build(BuildContext context) => _IOSNativeScope(
     scene: _scene,
     child: NotificationListener<ScrollNotification>(
-      onNotification: (_) {
-        _scene.scrolled();
+      onNotification: (notification) {
+        _scene.scrolled(notification);
         return false;
       },
       child: widget.child,
@@ -49,8 +49,9 @@ class _IOSNativeScope extends InheritedWidget {
 
 class IOSNativeScene extends ChangeNotifier {
   Animation<double>? _primary, _secondary;
-  final _edges = <_RenderIOSBlurRegion>{};
   bool moving = false;
+  bool scrolling = false;
+  int captureRevision = 0;
   static bool _inFlight(Animation<double>? animation) =>
       animation != null &&
       (animation.isAnimating || (animation.value > 0 && animation.value < 1));
@@ -77,24 +78,16 @@ class IOSNativeScene extends ChangeNotifier {
     notifyListeners();
   }
 
-  void scrolled() => notifyListeners();
-  bool intersectsEdge(RenderBox box) {
-    if (!box.attached || !box.hasSize) return false;
-    final bounds = MatrixUtils.transformRect(
-      box.getTransformTo(null),
-      Offset.zero & box.size,
-    );
-    return _edges.any(
-      (edge) =>
-          edge.attached &&
-          edge.hasSize &&
-          bounds.overlaps(
-            MatrixUtils.transformRect(
-              edge.getTransformTo(null),
-              Offset.zero & edge.size,
-            ),
-          ),
-    );
+  void scrolled(ScrollNotification notification) {
+    if (notification is ScrollStartNotification && !scrolling) {
+      scrolling = true;
+    } else if (notification is ScrollEndNotification && scrolling) {
+      scrolling = false;
+    } else {
+      return;
+    }
+    captureRevision++;
+    notifyListeners();
   }
 
   @override
@@ -103,58 +96,13 @@ class IOSNativeScene extends ChangeNotifier {
       animation?.removeListener(_changed);
       animation?.removeStatusListener(_status);
     }
-    _edges.clear();
     super.dispose();
   }
 }
 
-/// Marks only controls painted above a page's edge, not generic glass labels.
-class IOSNativeForeground extends InheritedWidget {
-  const IOSNativeForeground({super.key, required super.child});
-  static bool of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<IOSNativeForeground>() != null;
-  @override
-  bool updateShouldNotify(IOSNativeForeground oldWidget) => false;
-}
-
-class IOSNativeBlurRegion extends SingleChildRenderObjectWidget {
-  const IOSNativeBlurRegion({super.key, required super.child});
-  @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _RenderIOSBlurRegion(IOSNativeComposition.maybeOf(context));
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    covariant RenderProxyBox renderObject,
-  ) => (renderObject as _RenderIOSBlurRegion).scene =
-      IOSNativeComposition.maybeOf(context);
-}
-
-class _RenderIOSBlurRegion extends RenderProxyBox {
-  _RenderIOSBlurRegion(this._scene);
-  IOSNativeScene? _scene;
-  set scene(IOSNativeScene? value) {
-    if (value == _scene) return;
-    if (attached) _scene?._edges.remove(this);
-    _scene = value;
-    if (attached) _scene?._edges.add(this);
-  }
-
-  @override
-  void attach(PipelineOwner owner) {
-    super.attach(owner);
-    _scene?._edges.add(this);
-  }
-
-  @override
-  void detach() {
-    _scene?._edges.remove(this);
-    super.detach();
-  }
-}
-
 /// Retains the UIKit child and its state, but omits its PlatformViewLayer when
-/// Flutter must feather or move it. The texture is a cached native render, not
+/// Flutter moves it. Stationary controls must keep their real UIKit hit plane.
+/// The texture is a cached native render, not
 /// a Flutter imitation, and painting never requests another capture.
 class IOSNativeControlPlane extends SingleChildRenderObjectWidget {
   const IOSNativeControlPlane({
@@ -171,7 +119,6 @@ class IOSNativeControlPlane extends SingleChildRenderObjectWidget {
         IOSNativeComposition.maybeOf(context),
         textureId,
         interacting,
-        IOSNativeForeground.of(context),
       );
   @override
   void updateRenderObject(
@@ -181,42 +128,26 @@ class IOSNativeControlPlane extends SingleChildRenderObjectWidget {
     IOSNativeComposition.maybeOf(context),
     textureId,
     interacting,
-    IOSNativeForeground.of(context),
   );
 }
 
 class _RenderIOSControlPlane extends RenderProxyBox {
-  _RenderIOSControlPlane(
-    this._scene,
-    this._textureId,
-    this._interacting,
-    this._foreground,
-  );
+  _RenderIOSControlPlane(this._scene, this._textureId, this._interacting);
   IOSNativeScene? _scene;
   int? _textureId;
-  bool _interacting, _foreground;
+  bool _interacting;
   bool get _raster =>
-      _textureId != null &&
-      !_interacting &&
-      ((_scene?.moving ?? false) ||
-          (!_foreground && (_scene?.intersectsEdge(this) ?? false)));
-  void configure(
-    IOSNativeScene? scene,
-    int? textureId,
-    bool interacting,
-    bool foreground,
-  ) {
+      _textureId != null && !_interacting && (_scene?.moving ?? false);
+  void configure(IOSNativeScene? scene, int? textureId, bool interacting) {
     if (scene == _scene &&
         textureId == _textureId &&
-        interacting == _interacting &&
-        foreground == _foreground) {
+        interacting == _interacting) {
       return;
     }
     if (attached) _scene?.removeListener(markNeedsPaint);
     _scene = scene;
     _textureId = textureId;
     _interacting = interacting;
-    _foreground = foreground;
     if (attached) _scene?.addListener(markNeedsPaint);
     markNeedsPaint();
   }

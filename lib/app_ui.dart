@@ -223,9 +223,7 @@ class FrostedHeader extends StatelessWidget {
             left: padding.left + 24,
             right: padding.right + 24,
             height: toolbarHeight,
-            child: IOSNativeForeground(
-              child: NativeGlassGroup(child: GlassForeground(child: child)),
-            ),
+            child: NativeGlassGroup(child: GlassForeground(child: child)),
           ),
         ],
       ),

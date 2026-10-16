@@ -76,7 +76,7 @@ void main() {
   );
 
   nativeTest(
-    'missing snapshots keep visible native controls and bound retries',
+    'a failed capture stays native without repeating the expensive readback',
     (tester) async {
       missing = true;
       await tester.pumpWidget(
@@ -89,13 +89,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(nativeLayers(tester), 1);
       expect(textureLayers(tester), 0);
-      expect(captures, 3);
+      expect(captures, 1);
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 16));
       }
       expect(
         captures,
-        3,
+        1,
         reason: 'Capture failure must not create an idle frame loop',
       );
     },
@@ -137,6 +137,11 @@ void main() {
     await tester.pumpWidget(page(true));
     old.complete({'textureId': 99999, 'width': 64.0, 'height': 44.0});
     await tester.pumpAndSettle();
+    Navigator.of(
+      tester.element(find.byType(IOSGlassControl)),
+    ).push(softRoute<void>(const Atmosphere(child: SizedBox.expand())));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     expect(nativeLayers(tester), 0);
     expect(
       tester.layers.whereType<TextureLayer>().single.textureId,
@@ -144,6 +149,130 @@ void main() {
     );
     expect(creates, 1);
   });
+
+  nativeTest(
+    'passive glass with Flutter foreground never captures baked duplicate text',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Atmosphere(
+            child: Center(
+              child: IOSGlassSurface(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('菜单正文'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(nativeLayers(tester), 1);
+      expect(captures, 0);
+      expect(find.text('菜单正文'), findsOneWidget);
+    },
+  );
+
+  nativeTest(
+    'scrolling refreshes the next route snapshot once after settling',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Atmosphere(
+            child: ListView(
+              children: [
+                const SizedBox(height: 200),
+                Center(child: control(const ValueKey('scroll-control'))),
+                const SizedBox(height: 1600),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(captures, 1);
+      final pointer = await tester.startGesture(const Offset(300, 450));
+      await pointer.moveBy(const Offset(0, -120));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        captures,
+        1,
+        reason: 'No full-window readbacks during scroll frames',
+      );
+      expect(nativeLayers(tester), 1);
+      await tester.pump(const Duration(milliseconds: 120));
+      await pointer.up();
+      await tester.pumpAndSettle();
+      expect(
+        captures,
+        2,
+        reason:
+            'The next navigation must use the settled position and backdrop',
+      );
+      expect(creates, 1);
+    },
+  );
+
+  nativeTest(
+    'pending state refresh cannot replay the previous texture on return',
+    (tester) async {
+      late BuildContext home;
+      final value = ValueNotifier(false);
+      addTearDown(value.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              home = context;
+              return Atmosphere(
+                child: Center(child: control(const ValueKey('source-refresh'))),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Navigator.of(home).push(
+        softRoute<void>(
+          Atmosphere(
+            child: Center(
+              child: ValueListenableBuilder<bool>(
+                valueListenable: value,
+                builder: (_, current, _) => IOSGlassControl(
+                  key: const ValueKey('pending-refresh'),
+                  kind: 'switch',
+                  width: 64,
+                  height: 44,
+                  configuration: {'value': current},
+                  onAction: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final pending = Completer<Map<String, Object?>>();
+      delayed = pending;
+      value.value = true;
+      await tester.pump();
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('pending-refresh'))),
+      ).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        nativeLayers(tester),
+        1,
+        reason:
+            'Pending state must keep the live updated control, not an older raster',
+      );
+      expect(textureLayers(tester), 1);
+      pending.complete({'textureId': 99998, 'width': 64.0, 'height': 44.0});
+      await tester.pumpAndSettle();
+    },
+  );
 
   nativeTest(
     'an active pointer keeps native ownership while crossing a feather',
@@ -185,8 +314,8 @@ void main() {
       expect(textureLayers(tester), 0);
       await pointer.cancel();
       await tester.pumpAndSettle();
-      expect(nativeLayers(tester), 0);
-      expect(textureLayers(tester), 1);
+      expect(nativeLayers(tester), 1);
+      expect(textureLayers(tester), 0);
     },
   );
 
@@ -228,7 +357,7 @@ void main() {
       ).pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(nativeLayers(tester), 1);
+      expect(nativeLayers(tester), 2);
       expect(textureLayers(tester), greaterThanOrEqualTo(1));
       await tester.pumpAndSettle();
       await future;
@@ -236,7 +365,7 @@ void main() {
   );
 
   nativeTest(
-    'feathered content uses a texture while header and clear content stay native',
+    'stationary feathered controls keep their real native hit-test plane',
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -272,17 +401,77 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         nativeLayers(tester),
-        2,
+        3,
         reason:
-            'The UIKit content below the feather must not receive an unmasked native blur',
+            'Removing a native layer also removes its UIView and real UIKit touches',
       );
-      expect(textureLayers(tester), 1);
+      expect(textureLayers(tester), 0);
+      final native = find.descendant(
+        of: find.byKey(const ValueKey('under-edge')),
+        matching: find.byType(UiKitView),
+      );
+      expect(
+        tester
+            .hitTestOnBinding(tester.getCenter(native))
+            .path
+            .map((hit) => hit.target),
+        contains(tester.renderObject(native)),
+      );
       expect(
         find.byType(UiKitView),
         findsNWidgets(3),
-        reason: 'Rasterization must keep native state mounted',
+        reason: 'All stationary UIKit controls must remain mounted and painted',
       );
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  nativeTest(
+    'a cancelled interactive return restores the same live native controls',
+    (tester) async {
+      late BuildContext home;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              home = context;
+              return Atmosphere(
+                child: Center(child: control(const ValueKey('home'))),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Navigator.of(home).push(
+        softRoute<void>(
+          Atmosphere(
+            child: Center(child: control(const ValueKey('cancel-destination'))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final native = tester.element(find.byType(UiKitView).last);
+      final settledCreates = creates;
+      final settledCaptures = captures;
+      final gesture = await tester.startGesture(const Offset(1, 300));
+      await gesture.moveBy(const Offset(190, 0));
+      await tester.pump();
+      final route = ModalRoute.of(
+        tester.element(find.byKey(const ValueKey('cancel-destination'))),
+      )!;
+      expect(route.animation!.value, inExclusiveRange(0, 1));
+      expect(nativeLayers(tester), 0);
+      expect(textureLayers(tester), 2);
+      await gesture.moveBy(const Offset(-180, 0));
+      await tester.pump(const Duration(milliseconds: 200));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(route.animation!.value, 1);
+      expect(tester.element(find.byType(UiKitView).last), same(native));
+      expect(nativeLayers(tester), 1);
+      expect(creates, settledCreates);
+      expect(captures, settledCaptures);
     },
   );
 

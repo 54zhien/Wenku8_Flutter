@@ -4,10 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wenku8_flutter/ios_glass.dart';
 import 'package:wenku8_flutter/ios_scroll_edge.dart';
 import 'package:wenku8_flutter/easy_glass.dart';
-import 'package:wenku8_flutter/ios_native_composition.dart';
 import 'package:wenku8_flutter/native_effects.dart';
 import 'package:wenku8_flutter/performance_preferences.dart';
 
@@ -121,52 +119,43 @@ void main() {
       }
     },
   );
-  testWidgets(
-    'scroll edge retains its continuous feather and marks native underlap',
-    (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 200,
-              height: 120,
-              child: NativeBackdrop(
-                effect: NativeEffect.progressive,
-                blur: 8,
-                plateau: 60,
-                child: SizedBox.expand(),
-              ),
+  testWidgets('the Flutter edge retains its original continuous feather', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 200,
+            height: 120,
+            child: NativeBackdrop(
+              effect: NativeEffect.progressive,
+              blur: 8,
+              plateau: 60,
+              child: SizedBox.expand(),
             ),
           ),
         ),
-      );
-      expect(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is DecoratedBox &&
-              widget.decoration is BoxDecoration &&
-              (widget.decoration as BoxDecoration).backgroundBlendMode ==
-                  BlendMode.dstIn,
-        ),
-        findsOneWidget,
-        reason: 'The continuous upstream feather belongs to the Flutter plane.',
-      );
-      if (nativeIOSGlassEnabled) {
-        expect(
-          find.byType(IOSNativeBlurRegion),
-          findsOneWidget,
-          reason:
-              'Native content under the feather needs the composition boundary.',
-        );
-      }
-      expect(find.byType(ShaderMask), findsNothing);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-      debugDefaultTargetPlatformOverride = null;
-    },
-  );
+      ),
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is DecoratedBox &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration as BoxDecoration).backgroundBlendMode ==
+                BlendMode.dstIn,
+      ),
+      findsOneWidget,
+      reason: 'The continuous upstream feather belongs to the Flutter plane.',
+    );
+    expect(find.byType(ShaderMask), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   testWidgets(
     'continuous feather preserves real blur, clear content and direction',

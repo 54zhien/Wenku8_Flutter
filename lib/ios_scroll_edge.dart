@@ -1,11 +1,10 @@
 import 'package:flutter/widgets.dart';
 
 import 'easy_glass.dart';
-import 'ios_native_composition.dart';
 
-/// The original single Gaussian and continuous alpha feather. UIKit controls
-/// under this region use their cached native texture so the engine cannot apply
-/// an unmatched rectangular blur to a live platform view.
+/// The original single Gaussian and continuous alpha feather. This restores
+/// Flutter's renderer; live UIKit underlap still needs a shared native edge or
+/// engine support for the mask, not image proxies that break real touches.
 class IOSScrollEdge extends StatelessWidget {
   const IOSScrollEdge({
     super.key,
@@ -18,20 +17,10 @@ class IOSScrollEdge extends StatelessWidget {
   final bool fromBottom;
   final Widget child;
   @override
-  Widget build(BuildContext context) => Stack(
-    fit: StackFit.passthrough,
-    children: [
-      Positioned.fill(
-        child: IOSNativeBlurRegion(
-          child: EasyScrollEdge(
-            blur: blur,
-            plateau: plateau,
-            fromBottom: fromBottom,
-            child: const SizedBox.expand(),
-          ),
-        ),
-      ),
-      child,
-    ],
+  Widget build(BuildContext context) => EasyScrollEdge(
+    blur: blur,
+    plateau: plateau,
+    fromBottom: fromBottom,
+    child: child,
   );
 }
