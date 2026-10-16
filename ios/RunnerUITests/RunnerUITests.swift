@@ -11,13 +11,30 @@ final class RunnerUITests: XCTestCase {
     add(image)
   }
 
+  private func attachState(_ app: XCUIApplication, name: String) {
+    let text = XCTAttachment(string: app.debugDescription)
+    text.name = name + "-hierarchy"
+    text.lifetime = .keepAlways
+    add(text)
+    capture(name)
+  }
+
   func testNavigationMenuKeyboardAndReaderPanel() throws {
     let app = XCUIApplication()
     app.launch()
     let discover = app.buttons["发现"]
     let settings = app.buttons["设置"]
-    XCTAssertTrue(discover.waitForExistence(timeout: 30), app.debugDescription)
-    XCTAssertTrue(settings.isHittable)
+    // Both tabs must be ready within the original 30-second startup budget.
+    // Existence alone can precede UIKit's first completed interactive layout.
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in discover.exists && discover.isHittable && settings.exists && settings.isHittable },
+      object: app)
+    let readiness = XCTWaiter.wait(for: [ready], timeout: 30)
+    attachState(app, name: "startup-readiness")
+    let geometry = "app=\(app.frame), discover=\(discover.frame), settings=\(settings.frame), enabled=\(settings.isEnabled)"
+    XCTAssertEqual(readiness, .completed, geometry)
+    XCTAssertTrue(discover.exists, app.debugDescription)
+    XCTAssertTrue(settings.isHittable, geometry)
     XCTAssertGreaterThanOrEqual(settings.frame.height, 44)
     XCTAssertLessThanOrEqual(settings.frame.maxY, app.frame.maxY)
     if UIDevice.current.userInterfaceIdiom == .pad {

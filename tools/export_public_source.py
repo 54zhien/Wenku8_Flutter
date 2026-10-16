@@ -15,6 +15,7 @@ FILES = (
     ".github/workflows/ios.yml", "docs/IOS.md", "docs/IOS_PERFORMANCE.md",
     "tools/configure_ios_ui_tests.rb",
     "tools/ci_boot_ios_simulator.py",
+    "tools/test_ci_boot_ios_simulator.py",
 )
 DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "native_tests", "android", "ios", "docs/images", "third_party/liquid_glass_easy")
 PRIVATE_NAMES = {

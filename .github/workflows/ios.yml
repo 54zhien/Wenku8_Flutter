@@ -20,6 +20,9 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+      - name: Initialize display before simulator discovery
+        timeout-minutes: 2
+        run: python3 tools/ci_boot_ios_simulator.py --initialize build/motion/diagnostics/startup
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.5'
@@ -45,8 +48,7 @@ jobs:
           PY
           )
           echo "udid=$simulator" >> "$GITHUB_OUTPUT"
-          xcrun simctl boot "$simulator"
-          xcrun simctl bootstatus "$simulator" -b
+          python3 tools/ci_boot_ios_simulator.py "$simulator" build/motion/diagnostics/phone
       - name: Compile and measure release AOT paper kernel
         run: |
           set -euo pipefail
@@ -112,6 +114,9 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+      - name: Initialize display before simulator discovery
+        timeout-minutes: 2
+        run: python3 tools/ci_boot_ios_simulator.py --initialize build/ios/diagnostics/startup
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.5'
@@ -150,6 +155,8 @@ jobs:
         timeout-minutes: 8
         run: python3 tools/ci_boot_ios_simulator.py '${{ steps.simulator.outputs.udid }}' build/ios/diagnostics/large
       - run: python3 tools/check_public_source.py
+      - name: Test source and simulator gate tooling
+        run: python3 -m unittest discover -s tools -p "test_*.py"
       - run: flutter pub get
       - run: flutter analyze --no-pub
       - run: flutter test --no-pub

@@ -14,12 +14,16 @@ import time
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('udid')
+    parser.add_argument('udid', nargs='?')
     parser.add_argument('output', type=Path)
     parser.add_argument('--shutdown')
+    parser.add_argument('--initialize', action='store_true',
+                        help='Initialize the display service before device discovery')
     args = parser.parse_args()
     if sys.platform != 'darwin':
         parser.error('This helper only runs on the macOS CI host')
+    if args.initialize == bool(args.udid):
+        parser.error('Provide either a device identifier or --initialize')
     for value in (args.udid, args.shutdown):
         if value and not re.fullmatch(r'[0-9A-Fa-f-]{36}', value):
             parser.error('Invalid simulator identifier')
@@ -48,18 +52,24 @@ def main():
 
     status = 1
     try:
+        run('processes-before', ['ps', '-axo', 'pid,ppid,state,etime,pcpu,comm'], 5, False)
+        developer = subprocess.check_output(['xcode-select', '-p'], timeout=10,
+                                            text=True).strip()
+        simulator = Path(developer) / 'Applications/Simulator.app'
+        command = ['open', '-a', str(simulator)]
+        if args.udid:
+            command += ['--args', '-CurrentDeviceUDID', args.udid]
+        run('display-session', command, 15)
         run('devices-before', ['xcrun', 'simctl', 'list', 'devices', '--json'], 10)
+        if args.initialize:
+            status = 0
+            return status
         if args.shutdown:
             inventory = json.loads((args.output / 'devices-before.txt').read_text())
             previous = next((device for devices in inventory['devices'].values()
                              for device in devices if device['udid'] == args.shutdown), None)
             if previous and previous['state'] != 'Shutdown':
                 run('shutdown-previous', ['xcrun', 'simctl', 'shutdown', args.shutdown], 20)
-        developer = subprocess.check_output(['xcode-select', '-p'], timeout=10,
-                                            text=True).strip()
-        simulator = Path(developer) / 'Applications/Simulator.app'
-        run('display-session', ['open', '-a', str(simulator), '--args',
-                                '-CurrentDeviceUDID', args.udid], 15)
         # bootstatus -b handles an already-booted device and the initial boot.
         run('boot-readiness', ['xcrun', 'simctl', 'bootstatus', args.udid, '-b'], 360)
         run('ready-image', ['xcrun', 'simctl', 'io', args.udid, 'screenshot',
