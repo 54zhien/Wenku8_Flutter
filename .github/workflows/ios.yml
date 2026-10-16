@@ -50,13 +50,49 @@ jobs:
       - run: flutter test --no-pub
       - name: Execute Foundation protocol tests
         run: |
-          swiftc -parse-as-library ios/Runner/WenkuProtocol.swift ios/Runner/WenkuControlPolicy.swift native_tests/WenkuProtocolTests.swift -o "$RUNNER_TEMP/wenku-protocol-tests"
+          swiftc -parse-as-library ios/Runner/WenkuProtocol.swift ios/Runner/WenkuControlPolicy.swift ios/Runner/WenkuGBK.swift native_tests/WenkuProtocolTests.swift -o "$RUNNER_TEMP/wenku-protocol-tests"
           "$RUNNER_TEMP/wenku-protocol-tests"
       - name: Compile native-glass simulator candidate
         run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
       - name: Run native iOS tests
         run: |
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination 'id=${{ steps.simulator.outputs.udid }}' -resultBundlePath build/ios/native-tests.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Capture native-glass simulator previews
+        shell: bash
+        run: |
+          set -euo pipefail
+          simulator='${{ steps.simulator.outputs.udid }}'
+          xcrun simctl bootstatus "$simulator" -b
+          xcrun simctl install "$simulator" build/ios/iphonesimulator/Runner.app
+          xcrun simctl launch "$simulator" org.mewx.wenku8Flutter
+          mkdir -p build/ios/previews
+          for appearance in light dark; do
+            xcrun simctl ui "$simulator" appearance "$appearance"
+            sleep 5
+            xcrun simctl io "$simulator" screenshot "build/ios/previews/$appearance.png"
+          done
+      - name: Build unsigned iPhone candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
+          mkdir -p build/ios/package/Payload
+          ditto build/ios/iphoneos/Runner.app build/ios/package/Payload/Runner.app
+          cd build/ios/package
+          zip -qry ../Wenku8-ios26-unsigned.ipa Payload
+      - name: Save unsigned device candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios26-unsigned-${{ github.sha }}
+          path: build/ios/Wenku8-ios26-unsigned.ipa
+          if-no-files-found: error
+      - name: Save simulator previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios26-previews-${{ github.sha }}
+          path: build/ios/previews/*.png
+          if-no-files-found: ignore
       - name: Save test evidence
         if: always()
         uses: actions/upload-artifact@v4

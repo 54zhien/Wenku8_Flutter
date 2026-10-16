@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D0DB0091BAFEDA3F3CA22368 /* gbk-map.bin in Resources */ = {isa = PBXBuildFile; fileRef = FCD69DD29FDC1A609A7F1CA8 /* gbk-map.bin */; };
+		2DEC5E12A04F4EF8147AF40D /* WenkuGBK.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3552420118E9E67C34D0848B /* WenkuGBK.swift */; };
 		7BB6EFEF0C1ABF3E47994D40 /* WenkuControlPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3016473BEC2E2F8ECAA865C0 /* WenkuControlPolicy.swift */; };
 		AB66EC2769700E7209750B74 /* WenkuGlassControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13F5B06AEEC0CB88D103434 /* WenkuGlassControls.swift */; };
 		40D703832AC5F7028824FD07 /* WenkuLocalTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8F520ACBDA5A6D179D5902D /* WenkuLocalTools.swift */; };
@@ -47,6 +49,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FCD69DD29FDC1A609A7F1CA8 /* gbk-map.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/gbk-map.bin; sourceTree = "<group>"; };
+		3552420118E9E67C34D0848B /* WenkuGBK.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WenkuGBK.swift; sourceTree = "<group>"; };
 		3016473BEC2E2F8ECAA865C0 /* WenkuControlPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WenkuControlPolicy.swift; sourceTree = "<group>"; };
 		F13F5B06AEEC0CB88D103434 /* WenkuGlassControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WenkuGlassControls.swift; sourceTree = "<group>"; };
 		F8F520ACBDA5A6D179D5902D /* WenkuLocalTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WenkuLocalTools.swift; sourceTree = "<group>"; };
@@ -135,6 +139,8 @@
 				F8F520ACBDA5A6D179D5902D /* WenkuLocalTools.swift */,
 				F13F5B06AEEC0CB88D103434 /* WenkuGlassControls.swift */,
 				3016473BEC2E2F8ECAA865C0 /* WenkuControlPolicy.swift */,
+				3552420118E9E67C34D0848B /* WenkuGBK.swift */,
+				FCD69DD29FDC1A609A7F1CA8 /* gbk-map.bin */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -233,6 +239,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0DB0091BAFEDA3F3CA22368 /* gbk-map.bin in Resources */,
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
@@ -295,6 +302,7 @@
 				40D703832AC5F7028824FD07 /* WenkuLocalTools.swift in Sources */,
 				AB66EC2769700E7209750B74 /* WenkuGlassControls.swift in Sources */,
 				7BB6EFEF0C1ABF3E47994D40 /* WenkuControlPolicy.swift in Sources */,
+				2DEC5E12A04F4EF8147AF40D /* WenkuGBK.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,

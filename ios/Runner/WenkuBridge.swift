@@ -1,6 +1,5 @@
 import Flutter
 import Foundation
-import CoreFoundation
 import CryptoKit
 import ImageIO
 
@@ -79,6 +78,12 @@ private final class WenkuTransfer: NSObject, URLSessionDataDelegate {
 }
 
 final class WenkuBridge: NSObject, FlutterPlugin {
+  private static let reviewEncoder: Result<WenkuGBK, Error> = Result {
+    guard let url = Bundle.main.url(forResource: "gbk-map", withExtension: "bin") else {
+      throw WenkuProtocolError.invalidResponse
+    }
+    return try WenkuGBK(mapping: Data(contentsOf: url))
+  }
   private let accounts = DispatchQueue(label: "wenku8.accounts")
   private let images = DispatchQueue(label: "wenku8.images")
   private let workers: OperationQueue = {
@@ -136,15 +141,7 @@ final class WenkuBridge: NSObject, FlutterPlugin {
     case "clearSession": try store.write(nil); return nil
     case "encodeReview":
       guard let text = args["text"] as? String, text.utf16.count <= 10000 else { throw WenkuProtocolError.invalidInput }
-      let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GBK_95.rawValue)))
-      guard let bytes = text.data(using: encoding, allowLossyConversion: false) else { throw WenkuProtocolError.encoding }
-      let safe = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-*_".utf8)
-      let encoded = bytes.map { byte -> String in
-        if byte == 32 { return "+" }
-        if safe.contains(byte) { return String(UnicodeScalar(byte)) }
-        return String(format: "%%%02X", byte)
-      }.joined()
-      return Data(encoded.utf8).base64EncodedString()
+      return try Self.reviewEncoder.get().review(text)
     case "clearIllustrations":
       if FileManager.default.fileExists(atPath: imageDirectory.path) { try FileManager.default.removeItem(at: imageDirectory) }
       return nil

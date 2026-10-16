@@ -30,6 +30,14 @@ iOS 使用现有 legacy_api 通道和已实测的旧版 1.13 表单协议，不�
 
 PHP 会话放 Keychain；公共请求不携带账号 Cookie，密码不存储。遇到数值错误码或 HTML 验证页时明确报错，不显示为小说正文。旧接口的长期可用性仍需验证。
 
+书评编码使用严格 Java GBK 映射，避免 iOS 26 运行时不支持 GBK NSString 编码的问题。映射为 23940 个大端序四字节记录（Unicode BMP 标量、GBK 字节值），共 95760 字节；ASCII 直接编码，未映射字符报错。SHA256 为 `e73761b4a3fa5df00f5bccc727d0fea272f3b44670967d7d20cafd9db4584d74`。可用 Java 17+ 标准库重建：
+
+```sh
+java native_tests/GenerateGBKMap.java ios/Runner/Resources/gbk-map.bin
+```
+
+生成工具和 Swift 读表实现均在仓库内；编码后的 URL 表单仍遵循 Java URLEncoder 的空格、加号和波浪号规则。原生 XCTest 保留对既定字节的断言。
+
 保留现有缓存与备份格式。iOS 的“文件”选择器提供备份导入导出和旧数据文件夹导入；取消不计成功。旧数据文件夹应包含既有 saves/intro 结构或记录文件，不能直接访问 Android 应用私有目录。
 
 在线听书继续使用现有 Edge 协议与音频插件。已添加后台 audio 声明；锁屏、耳机、打断和后台段落合成仍需真机测试。没有把 Android 离线引擎占位实现作为 iOS 产品功能。
@@ -41,11 +49,13 @@ iOS 不启用 APK 下载与安装逻辑。当前保留“关于”及许可信�
 Foundation 测试直接执行产品协议代码：
 
 ```sh
-swiftc -parse-as-library ios/Runner/WenkuProtocol.swift ios/Runner/WenkuControlPolicy.swift native_tests/WenkuProtocolTests.swift -o /tmp/wenku-protocol-tests
+swiftc -parse-as-library ios/Runner/WenkuProtocol.swift ios/Runner/WenkuControlPolicy.swift ios/Runner/WenkuGBK.swift native_tests/WenkuProtocolTests.swift -o /tmp/wenku-protocol-tests
 /tmp/wenku-protocol-tests
 ```
 
 macOS 的 `.github/workflows/ios.yml` 还会构建模拟器候选，并执行 RunnerTests 中的协议、会话与 GBK 书评编码 XCTest。添加 workflow 不表示 CI 已运行或通过。
+
+原生测试通过后，工作流会捕获模拟器浅色/深色预览，并构建 `Wenku8-ios26-unsigned.ipa`。这是未签名的设备候选，需要自行签名后才能安装；成功生成也不代表真机验收通过。带玻璃开关的构建用于验证原型，不能代替完整控件迁移的验收。
 
 验收时逐项记录：
 

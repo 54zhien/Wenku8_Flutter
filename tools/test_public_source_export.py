@@ -52,6 +52,18 @@ class PublicSourceExportTest(unittest.TestCase):
         self.export(output, "--source-only")
         self.assertFalse(any(output.rglob("libcpp.so")))
 
+    def test_ios_export_keeps_build_workflow_codec_generator_and_instructions(self):
+        required = ("native_tests/GenerateGBKMap.java", "native_tests/WenkuProtocolTests.swift",
+                    ".github/workflows/ios.yml", "docs/IOS.md", "ios/Runner/Resources/gbk-map.bin")
+        for name in required:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("ios fixture")
+        output = self.base / "ios"
+        self.export(output)
+        for name in required:
+            self.assertTrue((output / name).is_file(), name)
+
     def test_never_overwrites_an_existing_export(self):
         output = self.base / "existing"
         output.mkdir()

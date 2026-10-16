@@ -12,8 +12,9 @@ FILES = (
     "docs/RELEASING.md", "docs/THIRD_PARTY.md", "CHANGELOG.md", "tools/prepare_release.py", "tools/test_prepare_release.py",
     "tools/check_public_source.py", "tools/test_public_source_policy.py",
     "tools/verify_apk_runtime.py", "tools/test_verify_apk_runtime.py",
+    ".github/workflows/ios.yml", "docs/IOS.md",
 )
-DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "android", "ios", "docs/images", "third_party/liquid_glass_easy")
+DIRECTORIES = ("lib", "assets", "shaders", "test", "integration_test", "native_tests", "android", "ios", "docs/images", "third_party/liquid_glass_easy")
 PRIVATE_NAMES = {
     "local.properties", "key.properties", "GeneratedPluginRegistrant.java",
     "Generated.xcconfig", "flutter_export_environment.sh", ".DS_Store",
@@ -33,7 +34,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="New, empty output folder")
     parser.add_argument("--source-only", action="store_true",
-                        help="Omit the embedded libcpp.so runtime (the resulting app cannot use its network API)")
+                        help="Omit the embedded libcpp.so runtime (the resulting Android app cannot use its network API)")
     args = parser.parse_args()
     destination = args.output.resolve()
     if destination == ROOT or ROOT.is_relative_to(destination) or destination.is_relative_to(ROOT):

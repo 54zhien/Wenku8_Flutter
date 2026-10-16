@@ -46,3 +46,13 @@ All logs are local under the workspace's sibling validation directory and exclud
 3. Exercise login and cookie persistence on a device without putting credentials in chat/logs; validate account reads and explicitly authorized writes.
 4. Validate file workflows, offline paragraph/selection restore, background audio and physical iPhone/iPad behavior separately.
 5. Establish user-owned remote and release identity before remote CI, signing or distribution. Original upstream grants this account pull access only.
+
+## Authorized remote verification
+
+- User explicitly authorized creating a fork, pushing the candidate and running macOS CI.
+- Fork created: https://github.com/54zhien/Wenku8_Flutter; only codex/ios26-port is pushed, original upstream remains unchanged.
+- First exact-candidate CI: https://github.com/54zhien/Wenku8_Flutter/actions/runs/38848462850 on 03548fa9a4fcbf30ad13e417f225e9867ce8bb85. Preserve its actual outcome; no same-SHA rerun to hide a failure.
+- First CI outcome: FAILED. Flutter checks/tests, Foundation checks and simulator compilation passed. Native XCTest executed all five cases: four passed, GBK review byte-equality failed (nil instead of expected encoded text).
+- Root cause from downloaded xcresult: iOS runtime logs "Unknown encoding 2147485233" for the GBK_95 NSString codec. The enum exists and compiled, but the converter is unavailable at runtime.
+- Fix: replace that runtime codec with an explicit strict GBK mapping generated using Java's Charset encoder with REPORT for malformed/unmappable input. No GB18030 substitution and no changed XCTest expectation. Resource is 23940 records / 95760 bytes; pure Swift suite now passes 36 checks, including the original failing review bytes and emoji rejection.
+- Ruling: Extend the next candidate's CI with simulator previews and an unsigned device IPA after native tests pass — provide a concrete iOS artifact for review — signing and physical-device acceptance remain separate.

@@ -49,6 +49,13 @@ struct WenkuProtocolTests {
     check(!WenkuControlPolicy.shouldBeginPan(horizontal: 10, vertical: 80), "vertical scroll does not select a tab")
     check(!WenkuControlPolicy.shouldBeginPan(horizontal: 0, vertical: 0), "stationary touch is not a pan")
     check(!WenkuControlPolicy.shouldBeginPan(horizontal: .infinity, vertical: 0), "nonfinite pan is rejected")
+    let gbk = try WenkuGBK(mapping: Data(contentsOf: URL(fileURLWithPath: "ios/Runner/Resources/gbk-map.bin")))
+    let encodedReview = try gbk.review("中文 空格+~")
+    check(String(data: Data(base64Encoded: encodedReview)!, encoding: .utf8) == "%D6%D0%CE%C4+%BF%D5%B8%F1%2B%7E", "strict Java GBK review envelope")
+    let asciiReview = try gbk.review("A z+~*")
+    check(String(data: Data(base64Encoded: asciiReview)!, encoding: .utf8) == "A+z%2B%7E*", "Java URL encoder ASCII rules")
+    rejects("GBK rejects emoji without replacement") { _ = try gbk.review("😀") }
+    rejects("GBK rejects malformed mapping") { _ = try WenkuGBK(mapping: Data([0, 1, 2])) }
     print("WenkuProtocol: \(checks) checks passed")
   }
 }
