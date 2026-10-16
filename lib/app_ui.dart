@@ -12,6 +12,7 @@ import 'cover_arrival.dart';
 import 'glass_optics.dart';
 import 'legacy_cover.dart';
 import 'ios_glass.dart';
+import 'ios_route_entrance.dart';
 import 'loading_ui.dart';
 import 'motion_ui.dart';
 import 'native_effects.dart';
@@ -533,7 +534,7 @@ class GlassIconButton extends StatelessWidget {
         icon: Icon(icon, size: 21, color: color),
       );
     }
-    if (nativeIOSGlassEnabled && iosSystemSymbol(icon) != null) {
+    if (nativeIOSControlsReady(context) && iosSystemSymbol(icon) != null) {
       return IOSGlassControl(
         kind: 'button',
         width: 46,
@@ -589,7 +590,7 @@ class GlassPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (nativeIOSGlassEnabled && iosSystemSymbol(icon) != null) {
+    if (nativeIOSControlsReady(context) && iosSystemSymbol(icon) != null) {
       return IOSGlassControl(
         kind: 'button',
         width: 196,
@@ -692,49 +693,57 @@ class GlassTextButton extends StatelessWidget {
       final width = math.max(64.0, painter.width + 32);
       painter.dispose();
       return LayoutBuilder(
-        builder: (context, constraints) => IOSGlassControl(
-          kind: 'button',
-          width: math.min(width, constraints.maxWidth),
-          height: 48,
-          configuration: {
-            'label': label,
-            'showLabel': true,
-            'enabled': onPressed != null,
-          },
-          onAction: (_) => onPressed?.call(),
-        ),
+        builder: (context, constraints) => nativeIOSControlsReady(context)
+            ? IOSGlassControl(
+                kind: 'button',
+                width: math.min(width, constraints.maxWidth),
+                height: 48,
+                configuration: {
+                  'label': label,
+                  'showLabel': true,
+                  'enabled': onPressed != null,
+                },
+                onAction: (_) => onPressed?.call(),
+              )
+            : SizedBox(
+                width: math.min(width, constraints.maxWidth),
+                height: 48,
+                child: _flutterControl(context),
+              ),
       );
     }
-    return Semantics(
-      button: true,
-      enabled: onPressed != null,
-      child: LiquidGlass(
-        radius: 22,
-        elevated: false,
-        onTap: onPressed,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 64, minHeight: 48),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Align(
-              widthFactor: 1,
-              heightFactor: 1,
-              child: DefaultTextStyle.merge(
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(
-                    alpha: onPressed == null ? .45 : 1,
-                  ),
+    return _flutterControl(context);
+  }
+
+  Widget _flutterControl(BuildContext context) => Semantics(
+    button: true,
+    enabled: onPressed != null,
+    child: LiquidGlass(
+      radius: 22,
+      elevated: false,
+      onTap: onPressed,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 64, minHeight: 48),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Align(
+            widthFactor: 1,
+            heightFactor: 1,
+            child: DefaultTextStyle.merge(
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.onSurface.withValues(
+                  alpha: onPressed == null ? .45 : 1,
                 ),
-                child: child,
               ),
+              child: child,
             ),
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 Widget sectionHeader(BuildContext context, String title, String subtitle) =>
@@ -1209,7 +1218,10 @@ class _NovelPageRoute<T> extends CupertinoPageRoute<T> {
     required Widget page,
     required this.reduceMotion,
     required this.paperFlight,
-  }) : super(builder: (_) => page);
+  }) : super(
+         builder: (_) =>
+             nativeIOSGlassEnabled ? IOSRouteEntrance(child: page) : page,
+       );
 
   final bool reduceMotion;
   final bool paperFlight;

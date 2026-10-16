@@ -4,12 +4,17 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'ios_route_entrance.dart';
+
 /// Opt in while native/Flutter backdrop composition is awaiting device review.
 /// This is a rollout switch, not an automatic substitute for native material.
 bool get nativeIOSGlassEnabled =>
     !kIsWeb &&
     defaultTargetPlatform == TargetPlatform.iOS &&
     const bool.fromEnvironment('WENKU8_NATIVE_GLASS');
+
+bool nativeIOSControlsReady(BuildContext context) =>
+    nativeIOSGlassEnabled && IOSRouteEntrance.readyOf(context);
 
 abstract final class IOSPlatformLayout {
   static bool isPad = false;
@@ -210,12 +215,21 @@ class IOSGlassSurface extends StatelessWidget {
       Positioned.fill(
         child: IgnorePointer(
           child: ExcludeSemantics(
-            child: IOSGlassControl(
-              kind: 'surface',
-              height: double.infinity,
-              configuration: {'radius': radius, 'opaque': opaque},
-              onAction: (_) {},
-            ),
+            child: nativeIOSControlsReady(context)
+                ? IOSGlassControl(
+                    kind: 'surface',
+                    height: double.infinity,
+                    configuration: {'radius': radius, 'opaque': opaque},
+                    onAction: (_) {},
+                  )
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemBackground
+                          .resolveFrom(context)
+                          .withValues(alpha: opaque ? 1 : .87),
+                      borderRadius: BorderRadius.circular(radius),
+                    ),
+                  ),
           ),
         ),
       ),
@@ -230,8 +244,10 @@ Widget adaptiveSwitch({
   required ValueChanged<bool>? onChanged,
   Color? activeTrackColor,
   String label = '开关',
-}) => nativeIOSGlassEnabled
-    ? IOSGlassControl(
+}) => Builder(
+  builder: (context) {
+    if (nativeIOSControlsReady(context)) {
+      return IOSGlassControl(
         key: key,
         kind: 'switch',
         width: 64,
@@ -244,13 +260,24 @@ Widget adaptiveSwitch({
         onAction: (event) {
           if (event['value'] case final bool value) onChanged?.call(value);
         },
-      )
-    : CupertinoSwitch(
-        key: key,
-        value: value,
-        activeTrackColor: activeTrackColor,
-        onChanged: onChanged,
       );
+    }
+    final control = CupertinoSwitch(
+      key: nativeIOSGlassEnabled ? null : key,
+      value: value,
+      activeTrackColor: activeTrackColor,
+      onChanged: onChanged,
+    );
+    return nativeIOSGlassEnabled
+        ? SizedBox(
+            key: key,
+            width: 64,
+            height: 44,
+            child: Center(child: control),
+          )
+        : control;
+  },
+);
 
 class AdaptiveSegmentedControl<T extends Object> extends StatelessWidget {
   const AdaptiveSegmentedControl({
@@ -263,33 +290,39 @@ class AdaptiveSegmentedControl<T extends Object> extends StatelessWidget {
   final T? groupValue;
   final ValueChanged<T?> onValueChanged;
   @override
-  Widget build(BuildContext context) =>
-      nativeIOSGlassEnabled && children.values.every((value) => value is Text)
-      ? IOSGlassControl(
-          kind: 'segmented',
-          height: 44,
-          configuration: {
-            'selectedIndex': groupValue == null
-                ? -1
-                : children.keys.toList().indexOf(groupValue as T),
-            'items': [
-              for (final child in children.values)
-                {'label': (child as Text).data ?? ''},
-            ],
-          },
-          onAction: (event) {
-            if (event['index'] case final int index) {
-              if (index >= 0 && index < children.length) {
-                onValueChanged(children.keys.elementAt(index));
-              }
+  Widget build(BuildContext context) {
+    final textOnly = children.values.every((value) => value is Text);
+    if (nativeIOSControlsReady(context) && textOnly) {
+      return IOSGlassControl(
+        kind: 'segmented',
+        height: 44,
+        configuration: {
+          'selectedIndex': groupValue == null
+              ? -1
+              : children.keys.toList().indexOf(groupValue as T),
+          'items': [
+            for (final child in children.values)
+              {'label': (child as Text).data ?? ''},
+          ],
+        },
+        onAction: (event) {
+          if (event['index'] case final int index) {
+            if (index >= 0 && index < children.length) {
+              onValueChanged(children.keys.elementAt(index));
             }
-          },
-        )
-      : CupertinoSlidingSegmentedControl<T>(
-          children: children,
-          groupValue: groupValue,
-          onValueChanged: onValueChanged,
-        );
+          }
+        },
+      );
+    }
+    final control = CupertinoSlidingSegmentedControl<T>(
+      children: children,
+      groupValue: groupValue,
+      onValueChanged: onValueChanged,
+    );
+    return nativeIOSGlassEnabled && textOnly
+        ? SizedBox(width: double.infinity, height: 44, child: control)
+        : control;
+  }
 }
 
 class IOSMenuOption<T> {

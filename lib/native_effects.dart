@@ -12,6 +12,7 @@ import 'easy_glass.dart';
 import 'glass_sampling_budget.dart';
 import 'performance_preferences.dart';
 import 'ios_glass.dart';
+import 'ios_scroll_edge.dart';
 
 /// Runtime effects execute on Android's Impeller GPU, without frame copies,
 /// platform-view overlays or a CPU bitmap blur.
@@ -525,6 +526,14 @@ class _NativeBackdropState extends State<NativeBackdrop> {
   Widget _buildEffect(BuildContext context, NativeBackdrop config) {
     if (config.effect == NativeEffect.progressive && config.blur <= 0) {
       return widget.child;
+    }
+    if (nativeIOSGlassEnabled && config.effect == NativeEffect.progressive) {
+      return IOSScrollEdge(
+        blur: config.blur,
+        plateau: config.plateau,
+        fromBottom: config.fromBottom,
+        child: config.child,
+      );
     }
     if (config._nativeEdge) {
       return EasyScrollEdge(

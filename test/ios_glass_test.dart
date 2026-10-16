@@ -213,7 +213,7 @@ void main() {
     expect(await showIOSMenu(anchor, options), isNull);
   });
 
-  testWidgets('iOS scroll edge cannot filter native control foregrounds', (
+  testWidgets('scroll edges retain their backdrop pipeline on either platform', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -222,15 +222,6 @@ void main() {
       const MaterialApp(home: SizedBox(height: 120, child: ProgressiveBlur())),
     );
     expect(find.byType(NativeBackdrop), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byType(NativeBackdrop),
-        matching: find.byType(UiKitView),
-      ),
-      findsNothing,
-      reason:
-          'The restored blur is a separate background plane, never an ancestor filter of UIKit controls.',
-    );
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     await tester.pumpWidget(
       const MaterialApp(home: SizedBox(height: 120, child: ProgressiveBlur())),

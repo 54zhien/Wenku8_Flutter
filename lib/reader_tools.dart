@@ -567,7 +567,7 @@ class _ReaderValueSliderState extends State<ReaderValueSlider> {
           ),
         ],
       ),
-      if (nativeIOSGlassEnabled)
+      if (nativeIOSControlsReady(context))
         IOSGlassControl(
           key: widget.sliderKey,
           kind: 'slider',
