@@ -18,6 +18,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Hosted tests exercise the real pinned engine classes, not a fake filter.
 FOUNDATION_EXPORT UIView * _Nullable WenkuGaussianProbeClip(CGRect frame);
 FOUNDATION_EXPORT BOOL WenkuGaussianProbeApply(UIView *clip, CGFloat sigma);
+FOUNDATION_EXPORT BOOL WenkuGaussianProbeClear(UIView *clip);
 #endif
 
 NS_ASSUME_NONNULL_END

@@ -6,6 +6,60 @@ import XCTest
 
 final class RunnerTests: XCTestCase {
 
+  /// Diagnostic comparison, not an acceptance test for the current adapter:
+  /// the engine's per-control output cannot cross the control's rectangle.
+  @MainActor
+  func testGaussianFootprintNeedsASharedPlaneAcrossControlBounds() async throws {
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 180, height: 260)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    controller.view.backgroundColor = .white
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+    let access = WenkuGaussianTestAccess(root: controller.view)
+    let controlClip = try XCTUnwrap(access.clip(CGRect(x: 60, y: 20, width: 60, height: 180)))
+    let button = UIButton(frame: controlClip.bounds)
+    button.backgroundColor = .green
+    controlClip.addSubview(button)
+    controller.view.addSubview(controlClip)
+    XCTAssertTrue(access.set(["id": 1, "y": 20, "height": 180, "plateau": 60, "sigma": 8, "fromBottom": false]))
+    XCTAssertTrue(access.apply(controlClip, sigma: 8))
+    func sample(_ point: CGPoint) async throws -> [UInt8] {
+      await withCheckedContinuation { continuation in
+        CaptureDisplayFrames.wait(2) { continuation.resume() }
+      }
+      let texture = WenkuControlTexture()
+      XCTAssertTrue(texture.capture(controller.view, allowExternalBlur: true))
+      let pixels = try XCTUnwrap(texture.copyPixelBuffer()).takeRetainedValue()
+      XCTAssertEqual(CVPixelBufferLockBaseAddress(pixels, .readOnly), kCVReturnSuccess)
+      defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+      let bytes = try XCTUnwrap(CVPixelBufferGetBaseAddress(pixels)).assumingMemoryBound(to: UInt8.self)
+      let x = Int(point.x / controller.view.bounds.width * CGFloat(CVPixelBufferGetWidth(pixels)))
+      let y = Int(point.y / controller.view.bounds.height * CGFloat(CVPixelBufferGetHeight(pixels)))
+      let index = y * CVPixelBufferGetBytesPerRow(pixels) + x * 4
+      return Array(UnsafeBufferPointer(start: bytes.advanced(by: index), count: 4))
+    }
+    let outside = CGPoint(x: 56, y: 50)
+    let perControl = try await sample(outside)
+    XCTAssertGreaterThan(perControl[2], 250, "Per-control Gaussian leaves the adjacent white background unchanged")
+    // Put the SAME engine Gaussian above the body at the complete edge width.
+    // No system-material style, new kernel or private Apple API is substituted.
+    let plane = try XCTUnwrap(access.clip(CGRect(x: 0, y: 20, width: 180, height: 180)))
+    plane.isUserInteractionEnabled = false
+    controller.view.addSubview(plane)
+    XCTAssertTrue(access.clear(controlClip))
+    XCTAssertTrue(access.apply(plane, sigma: 8))
+    let shared = try await sample(outside)
+    XCTAssertLessThan(shared[2], 240, "A full edge Gaussian must spread the green control into neighboring pixels")
+    XCTAssertGreaterThan(shared[1], 250, "The existing untinted Gaussian preserves the green channel")
+    XCTAssertEqual(shared[3], 255)
+    let hit = window.hitTest(controlClip.convert(CGPoint(x: 30, y: 30), to: window), with: nil)
+    XCTAssertTrue(hit === button, "The separate edge must pass the native initial touch through")
+    print("WENKU_GAUSSIAN_FOOTPRINT per_control_bgra=\(perControl) shared_bgra=\(shared)")
+  }
+
   @MainActor
   func testPinnedEngineGaussianReceivesContinuousFeatherWithoutTintOrLostHitTarget() async throws {
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)

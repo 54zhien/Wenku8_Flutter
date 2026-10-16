@@ -15,6 +15,7 @@ final class WenkuGaussianTestAccess {
   func track(_ view: UIView) { bridge.trackView(view) }
   func clip(_ frame: CGRect) -> UIView? { WenkuGaussianProbeClip(frame) }
   func apply(_ clip: UIView, sigma: CGFloat) -> Bool { WenkuGaussianProbeApply(clip, sigma) }
+  func clear(_ clip: UIView) -> Bool { WenkuGaussianProbeClear(clip) }
 }
 #endif
 

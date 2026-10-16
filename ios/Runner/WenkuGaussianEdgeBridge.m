@@ -37,6 +37,11 @@ BOOL WenkuGaussianProbeApply(UIView *clip, CGFloat sigma) {
   [clip applyBlurBackdropFilters:@[filter]];
   return YES;
 }
+BOOL WenkuGaussianProbeClear(UIView *clip) {
+  if (!InstallAdapter() || ![clip respondsToSelector:@selector(applyBlurBackdropFilters:)]) return NO;
+  [clip applyBlurBackdropFilters:@[]];
+  return YES;
+}
 #endif
 @implementation WenkuFeatherMask
 + (Class)layerClass { return CAGradientLayer.class; }
