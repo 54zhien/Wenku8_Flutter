@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A4E07C813B324A06A3CB61A1 /* WenkuGaussianEdgeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A4E07C813B324A06A3CB61A2 /* WenkuGaussianEdgeBridge.m */; };
 		D0DB0091BAFEDA3F3CA22368 /* gbk-map.bin in Resources */ = {isa = PBXBuildFile; fileRef = FCD69DD29FDC1A609A7F1CA8 /* gbk-map.bin */; };
 		2DEC5E12A04F4EF8147AF40D /* WenkuGBK.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3552420118E9E67C34D0848B /* WenkuGBK.swift */; };
 		7BB6EFEF0C1ABF3E47994D40 /* WenkuControlPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3016473BEC2E2F8ECAA865C0 /* WenkuControlPolicy.swift */; };
@@ -49,6 +50,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A4E07C813B324A06A3CB61A2 /* WenkuGaussianEdgeBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WenkuGaussianEdgeBridge.m; sourceTree = "<group>"; };
+		A4E07C813B324A06A3CB61A3 /* WenkuGaussianEdgeBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WenkuGaussianEdgeBridge.h; sourceTree = "<group>"; };
 		FCD69DD29FDC1A609A7F1CA8 /* gbk-map.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/gbk-map.bin; sourceTree = "<group>"; };
 		3552420118E9E67C34D0848B /* WenkuGBK.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WenkuGBK.swift; sourceTree = "<group>"; };
 		3016473BEC2E2F8ECAA865C0 /* WenkuControlPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WenkuControlPolicy.swift; sourceTree = "<group>"; };
@@ -138,6 +141,8 @@
 				0D05F5EF4B885B0C5B8839C9 /* WenkuBridge.swift */,
 				F8F520ACBDA5A6D179D5902D /* WenkuLocalTools.swift */,
 				F13F5B06AEEC0CB88D103434 /* WenkuGlassControls.swift */,
+				A4E07C813B324A06A3CB61A2 /* WenkuGaussianEdgeBridge.m */,
+				A4E07C813B324A06A3CB61A3 /* WenkuGaussianEdgeBridge.h */,
 				3016473BEC2E2F8ECAA865C0 /* WenkuControlPolicy.swift */,
 				3552420118E9E67C34D0848B /* WenkuGBK.swift */,
 				FCD69DD29FDC1A609A7F1CA8 /* gbk-map.bin */,
@@ -301,6 +306,7 @@
 				1B34B4E9ECC4C394951B6BF2 /* WenkuBridge.swift in Sources */,
 				40D703832AC5F7028824FD07 /* WenkuLocalTools.swift in Sources */,
 				AB66EC2769700E7209750B74 /* WenkuGlassControls.swift in Sources */,
+				A4E07C813B324A06A3CB61A1 /* WenkuGaussianEdgeBridge.m in Sources */,
 				7BB6EFEF0C1ABF3E47994D40 /* WenkuControlPolicy.swift in Sources */,
 				2DEC5E12A04F4EF8147AF40D /* WenkuGBK.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,

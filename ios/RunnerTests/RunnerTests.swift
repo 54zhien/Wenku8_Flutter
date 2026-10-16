@@ -7,6 +7,123 @@ import XCTest
 final class RunnerTests: XCTestCase {
 
   @MainActor
+  func testPinnedEngineGaussianReceivesContinuousFeatherWithoutTintOrLostHitTarget() async throws {
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 180, height: 260)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    controller.view.backgroundColor = .white
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+    let access = WenkuGaussianTestAccess(root: controller.view)
+    XCTAssertTrue(access.compatible, "Pinned engine ABI must match; incompatible is a failure")
+    let clip = try XCTUnwrap(access.clip(CGRect(x: 20, y: 20, width: 128, height: 180)))
+    let button = UIButton(frame: clip.bounds)
+    button.backgroundColor = .white
+    for x in stride(from: 0, to: 128, by: 4) {
+      let stripe = UIView(frame: CGRect(x: CGFloat(x), y: 0, width: 2, height: 180))
+      stripe.backgroundColor = .black; stripe.isUserInteractionEnabled = false
+      button.addSubview(stripe)
+    }
+    clip.addSubview(button)
+    controller.view.addSubview(clip)
+    XCTAssertTrue(access.apply(clip, sigma: 8))
+    func contrasts() async throws -> [Int] {
+      await withCheckedContinuation { continuation in
+        CaptureDisplayFrames.wait(2) { continuation.resume() }
+      }
+      let texture = WenkuControlTexture()
+      XCTAssertTrue(texture.capture(clip))
+      let buffer = try XCTUnwrap(texture.copyPixelBuffer()).takeRetainedValue()
+      XCTAssertEqual(CVPixelBufferLockBaseAddress(buffer, .readOnly), kCVReturnSuccess)
+      defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+      let bytes = try XCTUnwrap(CVPixelBufferGetBaseAddress(buffer)).assumingMemoryBound(to: UInt8.self)
+      let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+      let stride = CVPixelBufferGetBytesPerRow(buffer)
+      var tintDifference = 0, minimumAlpha: UInt8 = 255
+      let rows = (0..<height).map { y in
+        var low = 255, high = 0
+        for x in (width / 4)..<(width * 3 / 4) {
+          let p = y * stride + x * 4
+          tintDifference = max(tintDifference, abs(Int(bytes[p]) - Int(bytes[p + 2])))
+          minimumAlpha = min(minimumAlpha, bytes[p + 3])
+          low = min(low, Int(bytes[p])); high = max(high, Int(bytes[p]))
+        }
+        return high - low
+      }
+      XCTAssertLessThanOrEqual(tintDifference, 2, "Gaussian must not introduce tint")
+      XCTAssertEqual(minimumAlpha, 255)
+      return rows
+    }
+    let rectangular = try await contrasts()
+    XCTAssertLessThan(rectangular[rectangular.count / 10], 35)
+    XCTAssertLessThan(rectangular[rectangular.count * 9 / 10], 35,
+                      "Baseline demonstrates the engine's unmasked rectangular Gaussian")
+    access.track(button)
+    clip.removeFromSuperview()
+    XCTAssertTrue(access.set(["id": 1, "y": 20, "height": 180, "plateau": 60, "sigma": 8, "fromBottom": false]))
+    XCTAssertTrue(access.apply(clip, sigma: 8), "First composition occurs before native insertion")
+    XCTAssertEqual(access.maskCount, 1)
+    controller.view.addSubview(clip)
+    let top = try await contrasts()
+    XCTAssertLessThan(top[top.count / 10], 35)
+    XCTAssertGreaterThan(top[top.count * 98 / 100], 225)
+    XCTAssertLessThan(zip(top, top.dropFirst()).map { abs($0 - $1) }.max() ?? 256, 12,
+                      "The feather must be continuous, without radius bands")
+    let hit = window.hitTest(clip.convert(CGPoint(x: 64, y: 70), to: window), with: nil)
+    XCTAssertTrue(hit === button, "Native initial touch must reach the actual control under the feather")
+    access.set(["id": 1, "y": 20, "height": 180, "plateau": 60, "sigma": 8, "fromBottom": true])
+    let bottom = try await contrasts()
+    XCTAssertGreaterThan(bottom[bottom.count / 100], 225)
+    XCTAssertLessThan(bottom[bottom.count * 9 / 10], 35)
+    XCTAssertTrue(access.set(["id": 1, "y": 20, "height": 180, "plateau": 60, "sigma": 8, "fromBottom": false]))
+    // A scrolling native control sees only the middle portion of the edge.
+    // Its mask must retain the full profile's coordinates, not restart at 1.
+    clip.frame = CGRect(x: 20, y: 80, width: 128, height: 80)
+    button.frame = clip.bounds
+    XCTAssertTrue(access.apply(clip, sigma: 8))
+    let partial = try await contrasts()
+    XCTAssertLessThan(partial[partial.count / 20], 40)
+    XCTAssertGreaterThan(partial[partial.count * 19 / 20], 150)
+    let effect = try XCTUnwrap(clip.subviews.compactMap { $0 as? UIVisualEffectView }.first)
+    let mask = try XCTUnwrap(effect.mask)
+    XCTAssertEqual(mask.frame.minY, -60, accuracy: .001)
+    XCTAssertEqual(mask.frame.height, 180, accuracy: .001)
+    let gradient = try XCTUnwrap(mask.layer as? CAGradientLayer)
+    let colors = try XCTUnwrap(gradient.colors as? [CGColor])
+    XCTAssertEqual(colors.count, 8)
+    for i in 0..<8 {
+      let x = max(0, min(1, (Double(i) / 7 - 1.0 / 3) / (2.0 / 3)))
+      XCTAssertEqual(colors[i].alpha, 1 - x * x * (3 - 2 * x), accuracy: .00001)
+    }
+    // Reusing the control at a different position keeps its original mask view.
+    clip.frame.origin.y = 90
+    XCTAssertTrue(access.apply(clip, sigma: 8))
+    XCTAssertTrue(effect.mask === mask)
+    XCTAssertEqual(mask.frame.minY, -70, accuracy: .001)
+    XCTAssertFalse(access.set(["id": 1, "y": 20, "height": -1, "plateau": 60, "sigma": 8, "fromBottom": false]))
+    XCTAssertEqual(access.maskCount, 0, "A rejected revision must remove the stale mask")
+    XCTAssertTrue(access.set(["id": 1, "y": 100, "height": 80, "plateau": 20, "sigma": 8, "fromBottom": false]))
+    let unmatched = try await contrasts()
+    XCTAssertGreaterThan(unmatched[unmatched.count / 2], 225,
+                         "A known edge with mismatched geometry must not expose rectangular blur")
+    XCTAssertEqual(access.maskCount, 0)
+    XCTAssertTrue(access.set(["id": 1, "y": 20, "height": 180, "plateau": 60, "sigma": 8, "fromBottom": false]))
+    XCTAssertTrue(access.set(["id": 2, "y": 20, "height": 180, "plateau": 100, "sigma": 8, "fromBottom": false]))
+    let ambiguous = try await contrasts()
+    XCTAssertGreaterThan(ambiguous[ambiguous.count / 2], 225,
+                         "Ambiguous edge profiles must fail closed, without a raw Gaussian rectangle")
+    XCTAssertEqual(access.maskCount, 0)
+    access.remove(2)
+    XCTAssertEqual(access.maskCount, 1)
+    access.remove(1)
+    XCTAssertEqual(access.maskCount, 0)
+    let removed = try await contrasts()
+    XCTAssertLessThan(removed[removed.count * 9 / 10], 35)
+  }
+
+  @MainActor
   func testLiquidGlassTextureIncludesEffectsInTheFlutterHostingWindow() async throws {
     let window = try XCTUnwrap(UIApplication.shared.connectedScenes
       .compactMap { $0 as? UIWindowScene }.flatMap(\.windows)

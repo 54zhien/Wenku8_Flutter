@@ -27,7 +27,7 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-pub
       - name: Check native-control composition contracts
-        run: flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true test/ios_composition_boundary_test.dart test/ios_scroll_edge_test.dart test/ios_route_motion_test.dart
+        run: flutter test --no-pub --dart-define=WENKU8_NATIVE_GLASS=true test/ios_composition_boundary_test.dart test/ios_scroll_edge_test.dart test/ios_edge_bridge_test.dart test/ios_route_motion_test.dart
       - name: Compile simulator application without packaging
         run: flutter build ios --simulator --debug --no-codesign --dart-define=WENKU8_NATIVE_GLASS=true
       - name: Select additional iOS 26.2 hosted unit-test target
@@ -52,6 +52,7 @@ jobs:
           set -euo pipefail
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -destination "id=$COMPOSITION_TEST_UDID" -parallel-testing-enabled NO -only-testing:RunnerTests -resultBundlePath build/composition/native-capture.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/composition/native-capture.log
       - name: Boot the actual integration target after XCTest clone teardown
+        id: integration_boot
         timeout-minutes: 5
         run: |
           set -euo pipefail
@@ -69,6 +70,7 @@ jobs:
           set -euo pipefail
           flutter test --no-pub integration_test/ios_native_capture_test.dart -d "$COMPOSITION_TEST_UDID" --dart-define=WENKU8_NATIVE_GLASS=true --reporter expanded 2>&1 | tee build/composition/flutter-native-capture.log
       - name: Measure the delivered and candidate composition paths on the same simulator
+        if: ${{ !cancelled() && steps.integration_boot.outcome == 'success' }}
         timeout-minutes: 20
         run: |
           set -euo pipefail

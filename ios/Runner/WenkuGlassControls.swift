@@ -2,6 +2,22 @@ import Flutter
 import UIKit
 import CoreVideo
 
+#if DEBUG
+/// Fixed hosted-test seam. Release builds have neither the fixture nor these
+/// entry points; application code obtains filters only from engine composition.
+final class WenkuGaussianTestAccess {
+  private let bridge = WenkuGaussianEdgeBridge()
+  init(root: UIView) { bridge.flutterView = root }
+  var compatible: Bool { bridge.compatible }
+  var maskCount: UInt { bridge.maskedFilterCount }
+  @discardableResult func set(_ edge: [String: Any]) -> Bool { bridge.setEdge(edge) }
+  func remove(_ id: NSNumber) { bridge.removeEdge(id) }
+  func track(_ view: UIView) { bridge.trackView(view) }
+  func clip(_ frame: CGRect) -> UIView? { WenkuGaussianProbeClip(frame) }
+  func apply(_ clip: UIView, sigma: CGFloat) -> Bool { WenkuGaussianProbeApply(clip, sigma) }
+}
+#endif
+
 /// Explicitly enabled by the benchmark only; contains counts, never content.
 private enum WenkuGlassWork {
   static var recording = false
@@ -30,6 +46,7 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
   private weak var registrar: FlutterPluginRegistrar?
   private var menuButton: WenkuMenuButton?
   private var menuResult: FlutterResult?
+  private let edgeBridge = WenkuGaussianEdgeBridge()
   init(messenger: FlutterBinaryMessenger, textures: FlutterTextureRegistry) {
     self.messenger = messenger; self.textures = textures
   }
@@ -41,6 +58,20 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
     registrar.addMethodCallDelegate(factory, channel: channel)
   }
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "edgeSet", let edge = call.arguments as? [String: Any] {
+      WenkuGlassWork.add("edge_profiles_registered")
+      edgeBridge.flutterView = registrar?.viewController?.view
+      result(edgeBridge.setEdge(edge)); return
+    }
+    if call.method == "edgeRemove", let args = call.arguments as? [String: Any],
+      let identifier = args["id"] as? NSNumber {
+      edgeBridge.removeEdge(identifier); result(nil); return
+    }
+#if DEBUG
+    if call.method == "probeEdgeStatus" {
+      result(["compatible": edgeBridge.compatible, "maskedFilters": edgeBridge.maskedFilterCount]); return
+    }
+#endif
     if call.method == "probeStart" {
       WenkuGlassWork.counts = [:]; WenkuGlassWork.recording = true; result(nil); return
     }
@@ -90,7 +121,10 @@ final class WenkuGlassFactory: NSObject, FlutterPlatformViewFactory, FlutterPlug
   }
   func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
-    WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger, textures: textures)
+    let control = WenkuGlassView(frame: frame, id: viewId, args: args as? [String: Any] ?? [:], messenger: messenger, textures: textures)
+    edgeBridge.flutterView = registrar?.viewController?.view
+    edgeBridge.trackView(control.view())
+    return control
   }
 }
 
@@ -210,6 +244,26 @@ final class WenkuControlTexture: NSObject, FlutterTexture {
     let pointer = address.assumingMemoryBound(to: UInt8.self).advanced(by: offset)
     return Array(UnsafeBufferPointer(start: pointer, count: 4))
   }
+  func stripeContrastRows() -> [[Int]]? {
+    guard let buffer = copyPixelBuffer()?.takeRetainedValue(),
+      CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else { return nil }
+    defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+    guard let address = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+    let bytes = address.assumingMemoryBound(to: UInt8.self)
+    let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+    let stride = CVPixelBufferGetBytesPerRow(buffer)
+    return (0...32).map { index in
+      let y = (height - 1) * index / 32
+      var low = 255, high = 0, tint = 0, alpha = 255
+      for x in (width / 4)..<(width * 3 / 4) {
+        let p = y * stride + x * 4
+        low = min(low, Int(bytes[p])); high = max(high, Int(bytes[p]))
+        tint = max(tint, abs(Int(bytes[p]) - Int(bytes[p + 2])))
+        alpha = min(alpha, Int(bytes[p + 3]))
+      }
+      return [high - low, tint, alpha]
+    }
+  }
 #endif
 }
 
@@ -259,6 +313,12 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
 #if DEBUG
         if (call.arguments as? [String: Any])?["probe"] as? Bool == true {
           response["centerPixelBGRA"] = texture.centerPixelBGRA()
+          if self.state["kind"] as? String == "edgeProbe" {
+            response["stripeContrastRows"] = texture.stripeContrastRows()
+            let point = CGPoint(x: self.root.bounds.midX, y: self.root.bounds.midY)
+            let hit = self.root.window?.hitTest(self.root.convert(point, to: self.root.window), with: nil)
+            response["nativeHitTarget"] = hit?.isDescendant(of: self.root) == true
+          }
         }
 #endif
         result(response)
@@ -290,6 +350,23 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
   }
 
   private func createControls() {
+#if DEBUG
+    if state["kind"] as? String == "edgeProbe" {
+      let button = UIButton(type: .custom)
+      button.backgroundColor = .white
+      for x in stride(from: 0, to: 128, by: 4) {
+        let stripe = UIView(frame: CGRect(x: CGFloat(x), y: 0, width: 2, height: 1))
+        stripe.backgroundColor = .black; stripe.isUserInteractionEnabled = false
+        button.addSubview(stripe)
+      }
+      buttons = [button]; pin(button, to: root)
+      root.layout = { [weak button] in
+        guard let button else { return }
+        for stripe in button.subviews { stripe.frame.size.height = button.bounds.height }
+      }
+      return
+    }
+#endif
     switch state["kind"] as? String {
     case "surface":
       root.isUserInteractionEnabled = false
@@ -419,6 +496,9 @@ private final class WenkuGlassView: NSObject, FlutterPlatformView, UIGestureReco
     let style: UIUserInterfaceStyle = args["dark"] as? Bool == true ? .dark : .light
     if root.overrideUserInterfaceStyle != style { root.overrideUserInterfaceStyle = style }
     let enabled = args["enabled"] as? Bool ?? true
+#if DEBUG
+    if args["kind"] as? String == "edgeProbe" { return }
+#endif
     if let surface {
       surface.layer.cornerRadius = (args["radius"] as? NSNumber)?.doubleValue ?? 28
       let opaque = args["opaque"] as? Bool == true

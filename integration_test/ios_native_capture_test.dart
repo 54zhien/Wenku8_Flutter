@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:wenku8_flutter/ios_glass.dart';
+import 'package:wenku8_flutter/ios_scroll_edge.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -91,4 +92,133 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'real platform controls retain Gaussian feather and native hit targets',
+    (tester) async {
+      const diagnostics = MethodChannel('org.mewx.wenku8/glass_presentation');
+      await diagnostics.invokeMethod<void>('probeStart');
+      final layout = ValueNotifier((
+        y: 200.0,
+        height: 180.0,
+        x: 0.0,
+        bottom: false,
+      ));
+      addTearDown(layout.dispose);
+      MethodChannel? control;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ColoredBox(
+            color: Colors.white,
+            child: ValueListenableBuilder(
+              valueListenable: layout,
+              builder: (_, value, _) => Transform.translate(
+                offset: Offset(value.x, 0),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 80,
+                      top: value.y,
+                      width: 128,
+                      height: value.height,
+                      child: UiKitView(
+                        viewType: 'org.mewx.wenku8/glass_controls',
+                        creationParams: const {'kind': 'edgeProbe'},
+                        creationParamsCodec: const StandardMessageCodec(),
+                        onPlatformViewCreated: (id) {
+                          control = MethodChannel(
+                            'org.mewx.wenku8/glass_controls/$id',
+                          );
+                        },
+                      ),
+                    ),
+                    Positioned(
+                      left: 80,
+                      top: 200,
+                      width: 128,
+                      height: 180,
+                      child: IgnorePointer(
+                        child: IOSScrollEdge(
+                          blur: 8,
+                          plateau: 60,
+                          fromBottom: value.bottom,
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      Future<List<int>> sample() async {
+        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump();
+        final status = await diagnostics.invokeMapMethod<String, dynamic>(
+          'probeEdgeStatus',
+        );
+        expect(status?['compatible'], true);
+        expect(status?['maskedFilters'], greaterThan(0));
+        expect(control, isNotNull);
+        final result = await control!.invokeMapMethod<String, dynamic>(
+          'snapshot',
+          const {'probe': true},
+        );
+        expect(result, isNotNull);
+        expect(
+          result!['nativeHitTarget'],
+          true,
+          reason:
+              'The actual UIWindow hit path must reach the native control under the edge',
+        );
+        final rows = (result['stripeContrastRows'] as List)
+            .map((row) => List<int>.from(row as List))
+            .toList();
+        expect(rows, hasLength(33));
+        for (final row in rows) {
+          expect(row[1], lessThanOrEqualTo(2));
+          expect(row[2], 255);
+        }
+        return rows.map((row) => row[0]).toList();
+      }
+
+      final top = await sample();
+      expect(top[3], lessThan(40));
+      expect(top[32], greaterThan(225));
+      layout.value = (y: 260.0, height: 80.0, x: 0.0, bottom: false);
+      final partial = await sample();
+      expect(partial[1], lessThan(40));
+      expect(partial[31], greaterThan(150));
+      layout.value = (y: 260.0, height: 80.0, x: 20.0, bottom: false);
+      final translated = await sample();
+      expect(translated[1], lessThan(40));
+      expect(translated[31], greaterThan(150));
+      layout.value = (y: 200.0, height: 180.0, x: 0.0, bottom: true);
+      final bottom = await sample();
+      expect(bottom[0], greaterThan(225));
+      expect(bottom[29], lessThan(40));
+      final counts = await diagnostics.invokeMapMethod<String, dynamic>(
+        'probeEnd',
+      );
+      expect(
+        counts?['edge_profiles_registered'],
+        2,
+        reason:
+            'Scrolling and horizontal route movement must not send per-frame edge metadata',
+      );
+      // ignore: avoid_print
+      print(
+        'WENKU_EDGE_PROBE_JSON=${jsonEncode({'top_contrast': top, 'partial_contrast': partial, 'translated_contrast': translated, 'bottom_contrast': bottom, 'native_work_counts': counts})}',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      final removed = await diagnostics.invokeMapMethod<String, dynamic>(
+        'probeEdgeStatus',
+      );
+      expect(removed?['maskedFilters'], 0);
+    },
+  );
 }
